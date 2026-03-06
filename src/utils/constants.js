@@ -3,8 +3,14 @@ export const APP_NAME = 'AETERNA';
 export const APP_VERSION = '1.0.0';
 
 // API configuration
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-export const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:8000/socket.io';
+export const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  'https://aeterna-autonomous-alpha-engine.onrender.com';
+export const WS_URL =
+  import.meta.env.VITE_SOCKET_URL ||
+  import.meta.env.VITE_WS_URL ||
+  'https://aeterna-autonomous-alpha-engine.onrender.com';
 
 // Token storage keys
 export const ACCESS_TOKEN_KEY = 'access_token';

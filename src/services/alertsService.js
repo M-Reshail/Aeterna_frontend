@@ -1,128 +1,90 @@
 import api from './api';
+import { API_BASE_URL } from '@utils/constants';
+import { getAccessToken } from '@utils/tokenUtils';
 
 export const alertsService = {
-  // ─── Get all alerts (json-server supports _page, _limit, _sort, _order) ───
-  getAlerts: async ({ page = 1, limit = 20, priority, status, entity, q } = {}) => {
-    const params = { _page: page, _limit: limit, _sort: 'createdAt', _order: 'desc' };
-    if (priority) params.priority = priority;
-    if (status)   params.status   = status;
-    if (entity)   params.entity   = entity;
-    if (q)        params.q        = q;
-
-    const response = await api.get('/alerts', { params });
-    return response.data;
+  // ─── GET /api/alerts/history ──────────────────────────────────────────────
+  getAlerts: async ({ skip = 0, limit = 20, priority, start_date, end_date } = {}) => {
+    const params = { skip, limit };
+    if (priority)   params.priority   = priority;
+    if (start_date) params.start_date = start_date;
+    if (end_date)   params.end_date   = end_date;
+    return api.get('/api/alerts/history', { params });
   },
 
-  getAlertsPage: async ({
-    page = 1,
-    limit = 20,
-    priority,
-    status,
-    entity,
-    q,
-    dateFrom,
-    dateTo,
-  } = {}) => {
-    const params = { _page: page, _limit: limit, _sort: 'createdAt', _order: 'desc' };
-    if (priority) params.priority = priority;
-    if (status) params.status = status;
-    if (entity) params.entity = entity;
-    if (q) params.q = q;
-    if (dateFrom) params.createdAt_gte = new Date(dateFrom).toISOString();
-    if (dateTo) {
-      const end = new Date(dateTo);
-      end.setHours(23, 59, 59, 999);
-      params.createdAt_lte = end.toISOString();
-    }
-
-    const response = await api.get('/alerts', { params });
-    const total = Number(response.headers['x-total-count'] ?? 0);
-
-    return {
-      items: response.data,
-      total,
-      page,
-      limit,
-      totalPages: Math.max(1, Math.ceil(total / limit)),
-    };
+  // Paginated helper (converts page → skip for the backend)
+  getAlertsPage: async ({ page = 1, limit = 20, priority, start_date, end_date } = {}) => {
+    const skip = (page - 1) * limit;
+    const items = await alertsService.getAlerts({ skip, limit, priority, start_date, end_date });
+    return { items, page, limit };
   },
 
-  // ─── Get single alert by ID ────────────────────────────────────────────────
+  // ─── GET /api/alerts/{alert_id} ───────────────────────────────────────────
   getAlertById: async (alertId) => {
-    const response = await api.get(`/alerts/${alertId}`);
-    return response.data;
+    return api.get(`/api/alerts/${alertId}`);
   },
 
-  // ─── Mark single alert as read ────────────────────────────────────────────
+  // ─── PATCH /api/alerts/{alert_id}  (mark as read) ────────────────────────
   markAsRead: async (alertId) => {
-    const response = await api.patch(`/alerts/${alertId}`, {
-      status: 'read',
-      readAt: new Date().toISOString(),
-    });
-    return response.data;
+    return api.patch(`/api/alerts/${alertId}`);
   },
 
-  // ─── Mark multiple alerts as read (json-server has no bulk endpoint) ──────
   markMultipleAsRead: async (alertIds) => {
-    const results = await Promise.all(
-      alertIds.map((id) =>
-        api.patch(`/alerts/${id}`, {
-          status: 'read',
-          readAt: new Date().toISOString(),
-        })
-      )
-    );
-    return results.map((r) => r.data);
+    return Promise.all(alertIds.map((id) => api.patch(`/api/alerts/${id}`)));
   },
 
-  // ─── Dismiss (delete) a single alert ──────────────────────────────────────
+  // ─── DELETE /api/alerts/{alert_id}  (dismiss) ────────────────────────────
   dismissAlert: async (alertId) => {
-    const response = await api.delete(`/alerts/${alertId}`);
-    return response.data;
+    return api.delete(`/api/alerts/${alertId}`);
   },
 
-  // ─── Dismiss multiple alerts ───────────────────────────────────────────────
   dismissMultiple: async (alertIds) => {
-    await Promise.all(alertIds.map((id) => api.delete(`/alerts/${id}`)));
+    await Promise.all(alertIds.map((id) => api.delete(`/api/alerts/${id}`)));
     return { dismissed: alertIds.length };
   },
 
-  // ─── Get unread alerts only ───────────────────────────────────────────────
+  // ─── GET /api/alerts/history/export  (CSV download) ─────────────────────
+  exportAlerts: async ({ priority, start_date, end_date } = {}) => {
+    const params = {};
+    if (priority)   params.priority   = priority;
+    if (start_date) params.start_date = start_date;
+    if (end_date)   params.end_date   = end_date;
+
+    const token = getAccessToken();
+    const qs    = new URLSearchParams(params).toString();
+    const url   = `${API_BASE_URL}/api/alerts/history/export${qs ? '?' + qs : ''}`;
+
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Export failed: HTTP ${res.status}`);
+
+    const blob = await res.blob();
+    const link = document.createElement('a');
+    link.href     = URL.createObjectURL(blob);
+    link.download = 'aeterna-alerts.csv';
+    link.click();
+    URL.revokeObjectURL(link.href);
+  },
+
+  // ─── Convenience: get unread alerts ──────────────────────────────────────
   getUnread: async () => {
-    const response = await api.get('/alerts', {
-      params: { status: 'new', _sort: 'createdAt', _order: 'desc' },
-    });
-    return response.data;
+    return api.get('/api/alerts/history', { params: { limit: 50 } }).then(
+      (items) => (Array.isArray(items) ? items.filter((a) => a.status !== 'read') : [])
+    );
   },
 
-  // ─── Get alert stats from current data ────────────────────────────────────
+  // ─── Convenience: get alert stats from history ───────────────────────────
   getAlertStats: async () => {
-    const response = await api.get('/alerts');
-    const alerts = response.data;
+    const alerts = await api.get('/api/alerts/history', { params: { limit: 500 } });
+    if (!Array.isArray(alerts)) return { total: 0, unread: 0, high: 0, medium: 0, low: 0 };
     return {
-      total:    alerts.length,
-      unread:   alerts.filter((a) => a.status === 'new').length,
-      high:     alerts.filter((a) => a.priority === 'HIGH').length,
-      medium:   alerts.filter((a) => a.priority === 'MEDIUM').length,
-      low:      alerts.filter((a) => a.priority === 'LOW').length,
+      total:  alerts.length,
+      unread: alerts.filter((a) => a.status !== 'read').length,
+      high:   alerts.filter((a) => a.priority === 'HIGH').length,
+      medium: alerts.filter((a) => a.priority === 'MEDIUM').length,
+      low:    alerts.filter((a) => a.priority === 'LOW').length,
     };
-  },
-
-  // ─── Search alerts by title / content ─────────────────────────────────────
-  searchAlerts: async (query) => {
-    // json-server full-text search uses q= param
-    const response = await api.get('/alerts', { params: { q: query } });
-    return response.data;
-  },
-
-  // ─── Create a new alert ───────────────────────────────────────────────────
-  createAlert: async (alertData) => {
-    const response = await api.post('/alerts', {
-      ...alertData,
-      status:    alertData.status    || 'new',
-      timestamp: alertData.timestamp || new Date().toISOString(),
-    });
-    return response.data;
   },
 };
 

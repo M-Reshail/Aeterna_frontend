@@ -3,113 +3,86 @@ import api from './api';
 export const userService = {
   // Get user preferences
   getPreferences: async () => {
-    const response = await api.get('/api/users/preferences');
-    return response.data;
+    return api.get('/api/users/preferences');
   },
 
   // Update user preferences
   updatePreferences: async (preferences) => {
-    const response = await api.patch('/api/users/preferences', preferences);
-    return response.data;
+    return api.patch('/api/users/preferences', preferences);
   },
 
   // Get notification settings
   getNotificationSettings: async () => {
-    const response = await api.get('/api/users/notification-settings');
-    return response.data;
+    return api.get('/api/users/notification-settings');
   },
 
   // Update notification settings
   updateNotificationSettings: async (settings) => {
-    const response = await api.patch('/api/users/notification-settings', settings);
-    return response.data;
+    return api.patch('/api/users/notification-settings', settings);
   },
 
   // Add token to watchlist
   addToWatchlist: async (token) => {
-    const response = await api.post('/api/users/watchlist', {
-      token,
-    });
-    return response.data;
+    return api.post('/api/users/watchlist', { token });
   },
 
   // Remove token from watchlist
   removeFromWatchlist: async (token) => {
-    const response = await api.delete(`/api/users/watchlist/${token}`);
-    return response.data;
+    return api.delete(`/api/users/watchlist/${token}`);
   },
 
   // Get watchlist
   getWatchlist: async () => {
-    const response = await api.get('/api/users/watchlist');
-    return response.data;
+    return api.get('/api/users/watchlist');
   },
 
   // Update watchlist
   updateWatchlist: async (tokens) => {
-    const response = await api.patch('/api/users/watchlist', {
-      tokens,
-    });
-    return response.data;
+    return api.patch('/api/users/watchlist', { tokens });
   },
 
   // Link Telegram account
-  linkTelegram: async (linkingCode) => {
-    const response = await api.post('/api/users/telegram/link', {
-      linking_code: linkingCode,
-    });
-    return response.data;
+  // Uses PATCH /auth/profile with { telegram_id } per API documentation
+  linkTelegram: async (telegramId) => {
+    return api.patch('/auth/profile', { telegram_id: telegramId });
   },
 
   // Unlink Telegram account
   unlinkTelegram: async () => {
-    const response = await api.delete('/api/users/telegram/unlink');
-    return response.data;
+    return api.patch('/auth/profile', { telegram_id: null });
   },
 
-  // Get Telegram status
+  // Get Telegram status (read from profile)
   getTelegramStatus: async () => {
-    const response = await api.get('/api/users/telegram/status');
-    return response.data;
+    const profile = await api.get('/auth/profile');
+    return { linked: !!profile?.telegram_id, telegram_id: profile?.telegram_id ?? null };
   },
 
   // Set quiet hours
   setQuietHours: async (startTime, endTime) => {
-    const response = await api.post('/api/users/quiet-hours', {
-      start_time: startTime,
-      end_time: endTime,
-    });
-    return response.data;
+    return api.post('/api/users/quiet-hours', { start_time: startTime, end_time: endTime });
   },
 
-  // Update alert frequency
+  // Update alert frequency (stored in preferences via profile)
   updateAlertFrequency: async (frequency) => {
-    const response = await api.patch('/api/users/alert-frequency', {
-      frequency,
+    return api.patch('/auth/profile', {
+      preferences: { email_frequency: frequency },
     });
-    return response.data;
   },
 
   // Set priority filter
   setPriorityFilter: async (priorities) => {
-    const response = await api.patch('/api/users/priority-filter', {
-      priorities,
-    });
-    return response.data;
+    return api.patch('/api/users/priority-filter', { priorities });
   },
 
   // Get user statistics
   getUserStats: async () => {
-    const response = await api.get('/api/users/stats');
-    return response.data;
+    return api.get('/api/users/stats');
   },
 
   // Get activity log
   getActivityLog: async (page = 1, limit = 20) => {
-    const response = await api.get('/api/users/activity-log', {
-      params: { page, limit },
-    });
-    return response.data;
+    return api.get('/api/users/activity-log', { params: { page, limit } });
   },
 };
 

@@ -54,10 +54,11 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await authService.register(email, password, confirmPassword);
+      if (password !== confirmPassword) throw new Error('Passwords do not match');
+      const response = await authService.register(email, password);
       return response;
     } catch (err) {
-      const errorMsg = err.response?.data?.message || err.message;
+      const errorMsg = err.data?.detail || err.message;
       setError(errorMsg);
       throw err;
     } finally {
@@ -69,16 +70,17 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     setError(null);
     try {
+      // authService.login saves tokens; the real API does not return a user object
       const response = await authService.login(email, password);
-      const { access_token, user: userData } = response;
-      // authService.login already called saveTokens() — just update React state
-      setToken(access_token);
-      setUser(userData);
-
+      setToken(response.access_token);
+      // Fetch profile to populate user state
+      const profile = await authService.getProfile();
+      setUser(profile);
+      localStorage.setItem(USER_KEY, JSON.stringify(profile));
       return response;
     } catch (err) {
       console.error('❌ AuthContext.login - Error:', err);
-      const errorMsg = err.response?.data?.message || err.message;
+      const errorMsg = err.data?.detail || err.message;
       setError(errorMsg);
       throw err;
     } finally {
@@ -101,14 +103,13 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await authService.updateProfile(updates);
-      const updatedUser = response.data;
+      // api.js returns data directly (not wrapped in { data: ... })
+      const updatedUser = await authService.updateProfile(updates);
       setUser(updatedUser);
-      // Store user via JSON.stringify so getStoredUser() (JSON.parse) can read it back
       localStorage.setItem(USER_KEY, JSON.stringify(updatedUser));
-      return response;
+      return updatedUser;
     } catch (err) {
-      const errorMsg = err.response?.data?.message || err.message;
+      const errorMsg = err.data?.detail || err.message;
       setError(errorMsg);
       throw err;
     } finally {
@@ -116,23 +117,10 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  const changePassword = useCallback(async (currentPassword, newPassword, confirmPassword) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await authService.changePassword(
-        currentPassword,
-        newPassword,
-        confirmPassword
-      );
-      return response;
-    } catch (err) {
-      const errorMsg = err.response?.data?.message || err.message;
-      setError(errorMsg);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
+  const changePassword = useCallback(async (_currentPassword, _newPassword, _confirmPassword) => {
+    // The real API does not expose a direct change-password endpoint for authenticated users.
+    // Use the password-reset flow (request → email → confirm) instead.
+    throw new Error('Password change is not supported directly. Use the Forgot Password flow.');
   }, []);
 
   const requestPasswordReset = useCallback(async (email) => {
@@ -142,7 +130,7 @@ export const AuthProvider = ({ children }) => {
       const response = await authService.requestPasswordReset(email);
       return response;
     } catch (err) {
-      const errorMsg = err.response?.data?.message || err.message;
+      const errorMsg = err.data?.detail || err.message;
       setError(errorMsg);
       throw err;
     } finally {
@@ -154,10 +142,11 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await authService.resetPassword(token, password, confirmPassword);
+      if (password !== confirmPassword) throw new Error('Passwords do not match');
+      const response = await authService.confirmPasswordReset(token, password);
       return response;
     } catch (err) {
-      const errorMsg = err.response?.data?.message || err.message;
+      const errorMsg = err.data?.detail || err.message;
       setError(errorMsg);
       throw err;
     } finally {

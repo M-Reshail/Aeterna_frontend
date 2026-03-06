@@ -1,4 +1,5 @@
 import api from './api';
+import eventsService from './eventsService';
 
 const toDateKey = (dateValue) => new Date(dateValue).toISOString().slice(0, 10);
 
@@ -18,102 +19,51 @@ const fillMissingDays = (series, days = 7) => {
 };
 
 export const metricsService = {
+  // Uses real API: /ingestion/stats + /api/alerts/history
   getAdminDashboard: async () => {
-    const [metricsRes, alertsRes, usersRes] = await Promise.all([
-      api.get('/metrics'),
-      api.get('/alerts'),
-      api.get('/users'),
+    const [stats, alerts] = await Promise.all([
+      eventsService.getStats(),
+      api.get('/api/alerts/history', { params: { limit: 500 } }),
     ]);
 
-    const metrics = Array.isArray(metricsRes.data) ? metricsRes.data : [];
-    const alerts = Array.isArray(alertsRes.data) ? alertsRes.data : [];
-    const users = Array.isArray(usersRes.data) ? usersRes.data : [];
-
-    const latestMetric = metrics[metrics.length - 1] || null;
-    const activeUsers = users.filter((user) => user.active !== false).length;
-    const totalEvents = metrics.reduce((sum, item) => sum + (item.eventsPerSecond || 0), 0);
-    const errorRate = Number(
-      (
-        metrics.length > 0
-          ? metrics.reduce((sum, item) => sum + (item.errorRate ?? 0.8), 0) / metrics.length
-          : 0.8
-      ).toFixed(2)
-    );
+    const alertsArr = Array.isArray(alerts) ? alerts : [];
 
     return {
       summary: {
-        totalEventsIngested: totalEvents,
-        totalAlertsGenerated: alerts.length,
-        activeUsers,
-        systemUptime: latestMetric?.systemHealth ?? 99.2,
-        errorRate,
+        totalEventsIngested: stats?.total_events ?? 0,
+        totalAlertsGenerated: alertsArr.length,
+        activeUsers: null,           // not exposed in API docs
+        systemUptime: null,          // not exposed in API docs
+        eventsBySource: stats?.by_source ?? {},
+        eventsByType:   stats?.by_type   ?? {},
         lastUpdated: new Date().toISOString(),
       },
-      eventsOverTime: fillMissingDays(
-        metrics.map((item) => ({
-          date: toDateKey(item.timestamp),
-          value: item.eventsPerSecond || 0,
-        })),
-        7
-      ),
       alertsByPriority: ['HIGH', 'MEDIUM', 'LOW'].map((priority) => ({
         priority,
-        value: alerts.filter((alert) => alert.priority === priority).length,
+        value: alertsArr.filter((a) => a.priority === priority).length,
       })),
-      userGrowth: fillMissingDays(
-        users.reduce((accumulator, user) => {
-          const key = toDateKey(user.createdAt || new Date().toISOString());
-          const existing = accumulator.find((item) => item.date === key);
-          if (existing) existing.value += 1;
-          else accumulator.push({ date: key, value: 1 });
-          return accumulator;
-        }, []),
-        14
-      ).reduce((accumulator, item) => {
-        const previous = accumulator[accumulator.length - 1]?.value ?? 0;
-        accumulator.push({ ...item, value: previous + item.value });
-        return accumulator;
-      }, []),
     };
   },
 
+  // Admin user management — not in API docs; may return 404 on the real backend
   getUsers: async ({ page = 1, limit = 10, query = '', role = '' } = {}) => {
-    const response = await api.get('/users');
-    let users = Array.isArray(response.data) ? response.data : [];
-
-    if (query) {
-      const normalized = query.toLowerCase();
-      users = users.filter((user) =>
-        user.email?.toLowerCase().includes(normalized) ||
-        user.name?.toLowerCase().includes(normalized)
-      );
-    }
-
-    if (role) {
-      users = users.filter((user) => (user.role || 'user') === role);
-    }
-
-    const total = users.length;
-    const offset = (page - 1) * limit;
-    const items = users.slice(offset, offset + limit);
-
+    const users = await api.get('/admin/users', { params: { page, limit, query, role } });
+    if (!Array.isArray(users)) return { items: [], total: 0, page, limit, totalPages: 1 };
     return {
-      items,
-      total,
+      items: users,
+      total: users.length,
       page,
       limit,
-      totalPages: Math.max(1, Math.ceil(total / limit)),
+      totalPages: Math.max(1, Math.ceil(users.length / limit)),
     };
   },
 
   getUserDetails: async (userId) => {
-    const response = await api.get(`/users/${userId}`);
-    return response.data;
+    return api.get(`/admin/users/${userId}`);
   },
 
   updateUserStatus: async (userId, active) => {
-    const response = await api.patch(`/users/${userId}`, { active });
-    return response.data;
+    return api.patch(`/admin/users/${userId}`, { active });
   },
 };
 
