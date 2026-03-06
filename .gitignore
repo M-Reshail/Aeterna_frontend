@@ -16,3 +16,10 @@ yarn-error.log*
 .cache/
 .parcel-cache
 MT5/
+
+# Python virtual environments (not needed — frontend deploys to Vercel)
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
