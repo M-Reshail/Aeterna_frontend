@@ -34,6 +34,30 @@ export const eventsService = {
     return api.get('/ingestion/stats');
   },
 
+  // ─── Derive all known sources from stats + recent events ──────────────────
+  getAvailableSources: async ({ limit = 200 } = {}) => {
+    const [stats, events] = await Promise.all([
+      eventsService.getStats().catch(() => null),
+      eventsService.getEvents({ limit }).catch(() => []),
+    ]);
+
+    const sourceSet = new Set();
+
+    if (stats?.by_source && typeof stats.by_source === 'object') {
+      Object.keys(stats.by_source).forEach((source) => {
+        if (source) sourceSet.add(source);
+      });
+    }
+
+    if (Array.isArray(events)) {
+      events.forEach((event) => {
+        if (event?.source) sourceSet.add(event.source);
+      });
+    }
+
+    return Array.from(sourceSet).sort((a, b) => a.localeCompare(b));
+  },
+
   // ─── GET /ingestion/auto-update-status ───────────────────────────────────
   // Returns { status, auto_updates_enabled, update_frequency, last_event_timestamp, message }
   getAutoUpdateStatus: async () => {

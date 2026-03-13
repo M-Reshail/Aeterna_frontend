@@ -39,9 +39,15 @@ const PRIORITY_OPTIONS = [
   },
 ];
 
-const SOURCE_OPTIONS = ['CoinDesk'];
-
-export const FilterSidebar = ({ filters, onFiltersChange, onApply, onClear, totalCount, filteredCount }) => {
+export const FilterSidebar = ({
+  filters,
+  onFiltersChange,
+  onApply,
+  onClear,
+  totalCount,
+  filteredCount,
+  sourceOptions = [],
+}) => {
   const [openSections, setOpenSections] = useState({
     priority: true,
     dateRange: true,
@@ -279,7 +285,7 @@ export const FilterSidebar = ({ filters, onFiltersChange, onApply, onClear, tota
 
           {openSections.sources && (
             <div className="px-3 pb-3 space-y-1.5">
-              {SOURCE_OPTIONS.map((source) => {
+              {sourceOptions.map((source) => {
                 const isChecked = (filters.sources || []).includes(source);
                 return (
                   <label
@@ -308,14 +314,11 @@ export const FilterSidebar = ({ filters, onFiltersChange, onApply, onClear, tota
                   </label>
                 );
               })}
-              {/* Coming Soon */}
-              <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.02] opacity-50 cursor-not-allowed select-none">
-                <div className="w-3.5 h-3.5 rounded flex-shrink-0 border border-white/10" />
-                <span className="text-sm font-medium text-slate-500">More sources</span>
-                <span className="ml-auto text-[10px] font-semibold tracking-wide text-emerald-400/70 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5">
-                  Coming Soon
-                </span>
-              </div>
+              {sourceOptions.length === 0 && (
+                <div className="px-3 py-2 rounded-lg bg-white/[0.02] text-xs text-slate-500 border border-white/[0.06]">
+                  No sources available yet.
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -358,6 +361,7 @@ FilterSidebar.propTypes = {
   onClear: PropTypes.func.isRequired,
   totalCount: PropTypes.number,
   filteredCount: PropTypes.number,
+  sourceOptions: PropTypes.arrayOf(PropTypes.string),
 };
 
 export default FilterSidebar;

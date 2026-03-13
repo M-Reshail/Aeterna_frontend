@@ -22,75 +22,35 @@ import { WS_EVENTS } from '@utils/constants';
 import { useAuth } from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
 import feedbackService from '@services/feedbackService';
+import alertsService from '@services/alertsService';
+import eventsService from '@services/eventsService';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MOCK DATA
+// NORMALIZERS
 // ─────────────────────────────────────────────────────────────────────────────
-const generateAlerts = () => {
-  const now = Date.now();
-  return [
-    {
-      id: 1, event_type: 'WHALE_ACTIVITY', source: 'Ethereum', title: 'Whale Transfer Detected',
-      content: '50,000 ETH moved from unknown wallet 0x4f...a3 to Binance hot wallet. This pattern historically precedes significant sell pressure on major exchanges.',
-      priority: 'HIGH', status: 'new', timestamp: new Date(now - 2 * 60000).toISOString(), entity: 'ETH',
-    },
-    {
-      id: 2, event_type: 'PRICE_ALERT', source: 'Binance', title: 'BTC Breaks $65K Support',
-      content: 'Bitcoin has broken below the critical $65,000 psychological support level. RSI on the 4H chart indicates oversold conditions. Volume surge of 340% above 30-day average.',
-      priority: 'HIGH', status: 'new', timestamp: new Date(now - 5 * 60000).toISOString(), entity: 'BTC',
-    },
-    {
-      id: 3, event_type: 'NEWS', source: 'CoinDesk', title: 'SEC Approves Spot Ethereum ETF',
-      content: 'The Securities and Exchange Commission has officially approved spot Ethereum ETF applications from BlackRock, Fidelity, and VanEck. Trading begins next Monday.',
-      priority: 'HIGH', status: 'read', timestamp: new Date(now - 15 * 60000).toISOString(), entity: 'ETH',
-    },
-    {
-      id: 4, event_type: 'LIQUIDATION', source: 'Aave', title: 'Large Liquidation Event',
-      content: '$12.4M liquidated on Aave protocol across multiple positions. ETH/USDC pool most affected. Triggered by volatile gas fees and sudden price movement.',
-      priority: 'HIGH', status: 'new', timestamp: new Date(now - 22 * 60000).toISOString(), entity: 'ETH',
-    },
-    {
-      id: 5, event_type: 'DEFI_ACTIVITY', source: 'Uniswap', title: 'Unusual Pool Activity — SOL/USDC',
-      content: 'Liquidity in SOL/USDC pool on Uniswap v3 increased by 240% in the last 30 minutes. Large single LP added $4.2M to the 0.05% fee tier.',
-      priority: 'MEDIUM', status: 'new', timestamp: new Date(now - 35 * 60000).toISOString(), entity: 'SOL',
-    },
-    {
-      id: 6, event_type: 'PRICE_ALERT', source: 'Binance', title: 'SOL New All-Time High',
-      content: 'Solana (SOL) has reached a new all-time high of $289.34, surpassing the previous ATH of $285 set in November 2021. 24h volume exceeds $8.2B.',
-      priority: 'MEDIUM', status: 'read', timestamp: new Date(now - 45 * 60000).toISOString(), entity: 'SOL',
-    },
-    {
-      id: 7, event_type: 'GOVERNANCE', source: 'Ethereum', title: 'Uniswap V4 Governance Vote',
-      content: 'A governance proposal to deploy Uniswap V4 on Ethereum mainnet has reached quorum with 89% approval. Deployment estimated within 2 weeks pending final audits.',
-      priority: 'MEDIUM', status: 'new', timestamp: new Date(now - 62 * 60000).toISOString(), entity: 'UNI',
-    },
-    {
-      id: 8, event_type: 'NEWS', source: 'Twitter', title: 'Coinbase Lists PEPE Perpetuals',
-      content: 'Coinbase International has listed PEPE perpetual futures with up to 10x leverage. Open interest reached $48M within the first hour of trading.',
-      priority: 'MEDIUM', status: 'read', timestamp: new Date(now - 90 * 60000).toISOString(), entity: 'PEPE',
-    },
-    {
-      id: 9, event_type: 'DEFI_ACTIVITY', source: 'Aave', title: 'New WBTC Market Live on Aave V3',
-      content: 'Aave governance has approved and deployed a new WBTC isolated market on V3 Ethereum. Initial deposit cap set at 1,000 WBTC with 70% LTV.',
-      priority: 'LOW', status: 'read', timestamp: new Date(now - 2.5 * 3600000).toISOString(), entity: 'WBTC',
-    },
-    {
-      id: 10, event_type: 'NEWS', source: 'CoinDesk', title: 'Grayscale Files for XRP Spot ETF',
-      content: 'Grayscale Investments has officially filed with the SEC for an XRP spot ETF product. The filing follows the recent Ripple partial court victory and growing institutional interest.',
-      priority: 'LOW', status: 'read', timestamp: new Date(now - 4 * 3600000).toISOString(), entity: 'XRP',
-    },
-    {
-      id: 11, event_type: 'PRICE_ALERT', source: 'Binance', title: 'MATIC Rebrands to POL',
-      content: 'Polygon has initiated the transition from MATIC to POL token as part of its 2.0 upgrade. Token swap ratio is 1:1. Migration portal now open.',
-      priority: 'LOW', status: 'read', timestamp: new Date(now - 6 * 3600000).toISOString(), entity: 'POL',
-    },
-    {
-      id: 12, event_type: 'LARGE_TRANSFER', source: 'Solana', title: 'Large SOL Movement Detected',
-      content: '2.8M SOL tokens transferred from Kraken cold storage to an unknown wallet. On-chain analysis suggests possible OTC deal or protocol treasury movement.',
-      priority: 'MEDIUM', status: 'new', timestamp: new Date(now - 8 * 3600000).toISOString(), entity: 'SOL',
-    },
-  ];
+const normalizeStatus = (status) => {
+  if (status === 'pending') return 'new';
+  return status || 'new';
 };
+
+const inferEventType = (title = '') => {
+  const lower = title.toLowerCase();
+  if (lower.includes('price')) return 'PRICE_ALERT';
+  return 'NEWS';
+};
+
+const normalizeAlert = (alert) => ({
+  id: alert.alert_id ?? alert.id,
+  alert_id: alert.alert_id ?? alert.id,
+  event_type: alert.event_type || inferEventType(alert.title),
+  source: alert.source || alert.entity || 'system',
+  title: alert.title || 'Untitled Alert',
+  content: alert.content || alert.description || alert.title || 'No details provided',
+  priority: alert.priority || 'LOW',
+  status: normalizeStatus(alert.status),
+  timestamp: alert.created_at || alert.timestamp || alert.createdAt || new Date().toISOString(),
+  entity: alert.entity || '',
+});
 
 const DEFAULT_FILTERS = {
   priority: ['HIGH', 'MEDIUM', 'LOW'],
@@ -202,27 +162,50 @@ export const Dashboard = () => {
   const [showSortMenu, setShowSortMenu]   = useState(false);
   const [recentAlertIds, setRecentAlertIds] = useState(new Set());
   const [feedbackMap, setFeedbackMap] = useState({});
+  const [sourceOptions, setSourceOptions] = useState([]);
   const sortMenuRef = useRef(null);
   const feedRef     = useRef(null);
 
-  // Initial load simulation
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setAllAlerts(generateAlerts());
+  const loadDashboardData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [alerts, apiSources] = await Promise.all([
+        alertsService.getAlerts({ skip: 0, limit: 50 }),
+        eventsService.getAvailableSources({ limit: 200 }),
+      ]);
+
+      const normalizedAlerts = Array.isArray(alerts) ? alerts.map(normalizeAlert) : [];
+      setAllAlerts(normalizedAlerts);
+
+      const sourcesFromAlerts = normalizedAlerts
+        .map((item) => item.source)
+        .filter(Boolean);
+
+      const mergedSources = Array.from(new Set([...(apiSources || []), ...sourcesFromAlerts]))
+        .sort((a, b) => a.localeCompare(b));
+      setSourceOptions(mergedSources);
+    } catch (error) {
+      toast.error(error?.message || 'Failed to load dashboard alerts');
+      setAllAlerts([]);
+      setSourceOptions([]);
+    } finally {
       setIsLoading(false);
-    }, 700);
-    return () => clearTimeout(t);
-  }, []);
+    }
+  }, [toast]);
 
   useEffect(() => {
-    const unsubscribe = on(WS_EVENTS.NEW_ALERT, (incoming) => {
-      if (!incoming?.id) return;
+    loadDashboardData();
+  }, [loadDashboardData]);
 
-      const normalized = {
-        status: 'new',
-        timestamp: new Date().toISOString(),
-        ...incoming,
-      };
+  useEffect(() => {
+    const handleIncomingAlert = (incoming) => {
+      const normalized = normalizeAlert(incoming || {});
+      if (!normalized?.id) return;
+
+      setSourceOptions((prev) => {
+        if (!normalized.source || prev.includes(normalized.source)) return prev;
+        return [...prev, normalized.source].sort((a, b) => a.localeCompare(b));
+      });
 
       setAllAlerts((prev) => {
         if (prev.some((item) => item.id === normalized.id)) return prev;
@@ -243,7 +226,7 @@ export const Dashboard = () => {
         });
       }, 1800);
 
-      if (normalized.priority === 'HIGH' && 'Notification' in window) {
+      if (normalized.priority === 'HIGH' && typeof window !== 'undefined' && 'Notification' in window) {
         const permission = Notification.permission;
         if (permission === 'granted') {
           new Notification(normalized.title || 'New high priority alert', {
@@ -256,10 +239,14 @@ export const Dashboard = () => {
       }
 
       queryClient.invalidateQueries({ queryKey: ['alerts'] });
-    });
+    };
+
+    const unsubNewAlert = on(WS_EVENTS.NEW_ALERT, handleIncomingAlert);
+    const unsubAlert = on('alert', handleIncomingAlert);
 
     return () => {
-      if (typeof unsubscribe === 'function') unsubscribe();
+      if (typeof unsubNewAlert === 'function') unsubNewAlert();
+      if (typeof unsubAlert === 'function') unsubAlert();
     };
   }, [on, queryClient]);
 
@@ -299,7 +286,8 @@ export const Dashboard = () => {
       result = result.filter((a) => new Date(a.timestamp) <= to);
     }
     if (appliedFilters.sources?.length > 0) {
-      result = result.filter((a) => appliedFilters.sources.includes(a.source));
+      const selectedSources = appliedFilters.sources.map((source) => String(source).toLowerCase());
+      result = result.filter((a) => selectedSources.includes(String(a.source).toLowerCase()));
     }
 
     const sorted = [...result];
@@ -343,22 +331,38 @@ export const Dashboard = () => {
   const highPriorityCount = allAlerts.filter((a) => a.priority === 'HIGH').length;
   const highUnread = allAlerts.filter((a) => a.priority === 'HIGH' && a.status === 'new').length;
 
-  const handleMarkAsRead = useCallback((id) => {
+  const handleMarkAsRead = useCallback(async (id) => {
     setAllAlerts((prev) => prev.map((a) => (a.id === id ? { ...a, status: 'read' } : a)));
     setSelectedAlert((prev) => (prev?.id === id ? { ...prev, status: 'read' } : prev));
-  }, []);
+    try {
+      await alertsService.markAsRead(id);
+    } catch (error) {
+      toast.error(error?.message || 'Failed to mark alert as read');
+    }
+  }, [toast]);
 
   const handleOpenAlert = useCallback((alert) => {
     // Auto-mark as read on open (Gmail-style)
     const readAlert = { ...alert, status: 'read' };
     setSelectedAlert(readAlert);
     setAllAlerts((prev) => prev.map((a) => (a.id === alert.id ? { ...a, status: 'read' } : a)));
+    alertsService.markAsRead(alert.id).catch(() => {
+      // Keep UI optimistic; errors are non-blocking for detail view.
+    });
   }, []);
 
-  const handleDismiss = useCallback((id) => {
+  const handleDismiss = useCallback(async (id) => {
+    const previous = allAlerts;
     setAllAlerts((prev) => prev.filter((a) => a.id !== id));
     setSelectedAlert(null);
-  }, []);
+
+    try {
+      await alertsService.dismissAlert(id);
+    } catch (error) {
+      setAllAlerts(previous);
+      toast.error(error?.message || 'Failed to dismiss alert');
+    }
+  }, [allAlerts, toast]);
 
   const handleFeedback = useCallback(async (alertId, sentiment, comment = '') => {
     if (!user?.id) return;
@@ -390,14 +394,10 @@ export const Dashboard = () => {
     setVisibleCount(8);
   };
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    setIsLoading(true);
-    setTimeout(() => {
-      setAllAlerts(generateAlerts());
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }, 700);
+    await loadDashboardData();
+    setIsRefreshing(false);
   };
 
   const hasActiveFilters =
@@ -458,7 +458,7 @@ export const Dashboard = () => {
           <StatCard icon={Bell}          label="Total Alerts"    value={isLoading ? '…' : allAlerts.length}    subValue="all time"           accentColor="blue"    />
           <StatCard icon={BellRing}      label="Unread"          value={isLoading ? '…' : unreadCount}         subValue="requires action"    accentColor="amber"   />
           <StatCard icon={AlertTriangle} label="High Priority"   value={isLoading ? '…' : highPriorityCount}   subValue={`${highUnread} unread`}  accentColor="red"   />
-          <StatCard icon={Activity}      label="Sources Active"  value="50+"                                    subValue="live feeds"          accentColor="emerald" />
+          <StatCard icon={Activity}      label="Sources Active"  value={isLoading ? '…' : sourceOptions.length} subValue="live feeds"          accentColor="emerald" />
         </div>
 
         {/* MAIN CONTENT: SIDEBAR + FEED */}
@@ -473,6 +473,7 @@ export const Dashboard = () => {
               onClear={handleClearFilters}
               totalCount={allAlerts.length}
               filteredCount={filtered.length}
+              sourceOptions={sourceOptions}
             />
           </div>
 
@@ -488,6 +489,7 @@ export const Dashboard = () => {
                   onClear={handleClearFilters}
                   totalCount={allAlerts.length}
                   filteredCount={filtered.length}
+                  sourceOptions={sourceOptions}
                 />
               </div>
             </div>
@@ -564,6 +566,15 @@ export const Dashboard = () => {
                     Date range active
                     <button onClick={() => {
                       const nf = { ...appliedFilters, dateFrom: '', dateTo: '' };
+                      setAppliedFilters(nf); setFilters(nf);
+                    }}><X className="w-3 h-3" /></button>
+                  </div>
+                )}
+                {(appliedFilters.sources?.length ?? 0) > 0 && (
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Sources: {appliedFilters.sources.join(', ')}
+                    <button onClick={() => {
+                      const nf = { ...appliedFilters, sources: [] };
                       setAppliedFilters(nf); setFilters(nf);
                     }}><X className="w-3 h-3" /></button>
                   </div>
