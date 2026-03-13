@@ -165,6 +165,12 @@ export const Dashboard = () => {
   const [sourceOptions, setSourceOptions] = useState([]);
   const sortMenuRef = useRef(null);
   const feedRef     = useRef(null);
+  const toastRef = useRef(toast);
+  const hasShownLoadErrorRef = useRef(false);
+
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
 
   const loadDashboardData = useCallback(async () => {
     setIsLoading(true);
@@ -184,14 +190,18 @@ export const Dashboard = () => {
       const mergedSources = Array.from(new Set([...(apiSources || []), ...sourcesFromAlerts]))
         .sort((a, b) => a.localeCompare(b));
       setSourceOptions(mergedSources);
+      hasShownLoadErrorRef.current = false;
     } catch (error) {
-      toast.error(error?.message || 'Failed to load dashboard alerts');
+      if (!hasShownLoadErrorRef.current) {
+        toastRef.current.error(error?.message || 'Failed to load dashboard alerts');
+        hasShownLoadErrorRef.current = true;
+      }
       setAllAlerts([]);
       setSourceOptions([]);
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
     loadDashboardData();
