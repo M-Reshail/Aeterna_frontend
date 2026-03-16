@@ -119,23 +119,29 @@ const SORT_OPTIONS = [
 
 const PRIORITY_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2 };
 const isEventItemId = (id) => String(id).startsWith('event-');
-const FALLBACK_SOURCE_OPTIONS = ['CoinDesk', 'CoinTelegraph', 'Decrypt', 'CoinGecko'];
+const FALLBACK_SOURCE_OPTIONS = ['CoinDesk', 'CoinTelegraph', 'Decrypt', 'CoinGecko', 'CoinMarketCap'];
 const SOURCE_QUERY_BY_LABEL = {
   CoinDesk: 'coindesk',
   CoinTelegraph: 'cointelegraph',
   Decrypt: 'decrypt.co',
   CoinGecko: 'coingecko',
+  CoinMarketCap: 'coinmarketcap',
 };
 
 const normalizeSourceName = (source) => {
-  const raw = String(source || '').trim();
+  const raw = String(source || '').trim().toLowerCase();
   if (!raw) return '';
 
-  const lower = raw.toLowerCase();
-  if (lower.includes('coindesk')) return 'CoinDesk';
-  if (lower.includes('cointelegraph')) return 'CoinTelegraph';
-  if (lower.includes('decrypt')) return 'Decrypt';
-  if (lower.includes('coingecko')) return 'CoinGecko';
+  // Match patterns: www.coindesk.com, coindesk.com, coindesk
+  if (raw.includes('coindesk')) return 'CoinDesk';
+  // Match patterns: cointelegraph.com, cointelegraph
+  if (raw.includes('cointelegraph')) return 'CoinTelegraph';
+  // Match patterns: decrypt.co, decrypt
+  if (raw.includes('decrypt')) return 'Decrypt';
+  // Match patterns: coingecko.com, coingecko
+  if (raw.includes('coingecko')) return 'CoinGecko';
+  // Match patterns: coinmarketcap.com, coinmarketcap, cmc
+  if (raw.includes('coinmarketcap') || raw.includes('cmc')) return 'CoinMarketCap';
 
   // Keep Data Sources clean: only show known upstream providers.
   return '';
