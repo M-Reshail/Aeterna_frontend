@@ -15,8 +15,6 @@ import {
   Inbox,
   Loader2,
   X,
-  TrendingUp,
-  Calendar,
 } from 'lucide-react';
 import { AlertCard } from '@components/dashboard/AlertCard';
 import { AlertDetailModal } from '@components/dashboard/AlertDetailModal';
@@ -295,10 +293,6 @@ export const Dashboard = () => {
   const [feedbackMap, setFeedbackMap] = useState({});
   const [sourceOptions, setSourceOptions] = useState([]);
   const [loadError, setLoadError] = useState('');
-  // New state for dashboard highlights
-  const [highImpactNews, setHighImpactNews] = useState([]);
-  const [todayEvents, setTodayEvents] = useState([]);
-  const [isLoadingHighlights, setIsLoadingHighlights] = useState(true);
   const sortMenuRef = useRef(null);
   const feedRef     = useRef(null);
   const toastRef = useRef(toast);
@@ -418,72 +412,6 @@ export const Dashboard = () => {
       setIsLoading(false);
     }
   }, []);
-
-  // Load high-impact news for dashboard highlights
-  const loadDashboardHighlights = useCallback(async () => {
-    try {
-      setIsLoadingHighlights(true);
-      
-      // Load high-impact news
-      let news = [];
-      try {
-        const newsData = await eventsService.getEventsByType('news', { skip: 0, limit: 50 });
-        if (Array.isArray(newsData)) {
-          news = newsData
-            .map(normalizeNewsEvent)
-            .filter(n => n.priority === 'HIGH')
-            .slice(0, 3); // Show only top 3 high-impact news
-        }
-      } catch (error) {
-        console.warn('Could not load high-impact news:', error.message);
-      }
-      
-      setHighImpactNews(news);
-      
-      // Mock economic events for today
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      
-      const mockEvents = [
-        {
-          id: 'event-1',
-          title: 'US Federal Funds Rate Decision',
-          country: 'USA',
-          impact: 'HIGH',
-          time: '18:00',
-          category: 'Rates',
-        },
-        {
-          id: 'event-2',
-          title: 'Eurozone Inflation Rate',
-          country: 'Eurozone',
-          impact: 'HIGH',
-          time: '10:00',
-          category: 'Inflation',
-        },
-        {
-          id: 'event-3',
-          title: 'UK Unemployment Rate',
-          country: 'United Kingdom',
-          impact: 'MEDIUM',
-          time: '09:30',
-          category: 'Employment',
-        },
-      ];
-      
-      setTodayEvents(mockEvents);
-    } catch (error) {
-      console.error('Error loading dashboard highlights:', error);
-    } finally {
-      setIsLoadingHighlights(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadDashboardHighlights();
-  }, [loadDashboardHighlights]);
 
   const selectedSourcesKey = (appliedFilters.sources || []).join('|');
   const eventTypeKey = appliedFilters.eventType || 'all';
@@ -791,107 +719,6 @@ export const Dashboard = () => {
           <StatCard icon={BellRing}      label="Unread"          value={isLoading ? '…' : unreadCount}         subValue="requires action"    accentColor="amber"   />
           <StatCard icon={AlertTriangle} label="High Priority"   value={isLoading ? '…' : highPriorityCount}   subValue={`${highUnread} unread`}  accentColor="red"   />
           <StatCard icon={Activity}      label="Sources Active"  value={isLoading ? '…' : sourceOptions.length} subValue="live feeds"          accentColor="emerald" />
-        </div>
-
-        {/* TODAY'S HIGHLIGHTS - High Impact News & Economic Events */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-          {/* High Impact News */}
-          <div className="bg-gradient-to-br from-emerald-500/5 to-emerald-600/5 border border-emerald-500/20 rounded-xl p-4 sm:p-5 hover:border-emerald-500/40 transition-all">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-emerald-400" />
-                High-Impact News
-              </h2>
-              <button
-                onClick={() => navigate('/news')}
-                className="text-xs px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-all"
-              >
-                View All
-              </button>
-            </div>
-            {isLoadingHighlights ? (
-              <div className="space-y-2">
-                {Array.from({ length: 2 }).map((_, i) => (
-                  <div key={i} className="h-16 bg-white/5 rounded-lg animate-pulse" />
-                ))}
-              </div>
-            ) : highImpactNews.length === 0 ? (
-              <p className="text-sm text-slate-500 text-center py-6">No high-impact news today</p>
-            ) : (
-              <div className="space-y-2">
-                {highImpactNews.map(news => (
-                  <div
-                    key={news.id}
-                    className="bg-white/5 border border-white/10 rounded-lg p-3 hover:bg-white/10 hover:border-emerald-500/20 transition-all cursor-pointer group"
-                  >
-                    <div className="flex items-start gap-2">
-                      <span className="inline-block px-2 py-1 rounded text-xs font-semibold bg-red-500/20 text-red-300 flex-shrink-0 mt-0.5">
-                        HIGH
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs sm:text-sm font-semibold text-white group-hover:text-emerald-400 transition-colors line-clamp-1">
-                          {news.title}
-                        </p>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {news.source} • {new Date(news.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Today's Economic Events */}
-          <div className="bg-gradient-to-br from-amber-500/5 to-amber-600/5 border border-amber-500/20 rounded-xl p-4 sm:p-5 hover:border-amber-500/40 transition-all">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-amber-400" />
-                Economic Events Today
-              </h2>
-              <button
-                onClick={() => navigate('/economic-events')}
-                className="text-xs px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-all"
-              >
-                View All
-              </button>
-            </div>
-            {isLoadingHighlights ? (
-              <div className="space-y-2">
-                {Array.from({ length: 2 }).map((_, i) => (
-                  <div key={i} className="h-16 bg-white/5 rounded-lg animate-pulse" />
-                ))}
-              </div>
-            ) : todayEvents.length === 0 ? (
-              <p className="text-sm text-slate-500 text-center py-6">No economic events today</p>
-            ) : (
-              <div className="space-y-2">
-                {todayEvents.slice(0, 3).map(event => (
-                  <div
-                    key={event.id}
-                    className="bg-white/5 border border-white/10 rounded-lg p-3 hover:bg-white/10 hover:border-amber-500/20 transition-all cursor-pointer group"
-                  >
-                    <div className="flex items-start gap-2">
-                      <span className={`inline-block px-2 py-1 rounded text-xs font-semibold flex-shrink-0 mt-0.5 ${
-                        event.impact === 'HIGH' ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/20 text-amber-300'
-                      }`}>
-                        {event.impact}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs sm:text-sm font-semibold text-white group-hover:text-amber-400 transition-colors line-clamp-1">
-                          {event.title}
-                        </p>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {event.country} • {event.time} • {event.category}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
 
         {/* MAIN CONTENT: SIDEBAR + FEED */}

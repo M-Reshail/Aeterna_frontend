@@ -3,7 +3,6 @@ import { Link as RouterLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@hooks/useAuth';
 import { useSocket } from '@hooks/useSocket';
 import { ChevronDown, Menu, X } from 'lucide-react';
-import { NewsDropdown } from './NewsDropdown';
 
 export const Header = () => {
   const navigate = useNavigate();
@@ -12,16 +11,13 @@ export const Header = () => {
   const { status } = useSocket({ autoConnect: isAuthenticated });
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [showNewsDropdown, setShowNewsDropdown] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const userMenuRef = useRef(null);
-  const newsDropdownRef = useRef(null);
 
   // Close mobile menu and dropdowns on route change
   useEffect(() => {
     setShowMobileMenu(false);
-    setShowNewsDropdown(false);
     setShowMoreMenu(false);
   }, [location.pathname]);
 
@@ -88,17 +84,12 @@ export const Header = () => {
                 >
                   Alerts
                 </RouterLink>
-                {/* News Dropdown */}
-                <div className="relative" ref={newsDropdownRef}>
-                  <button
-                    onClick={() => setShowNewsDropdown(!showNewsDropdown)}
-                    className={`nav-link flex items-center gap-1 ${showNewsDropdown ? 'active' : ''}`}
-                  >
-                    News
-                    <ChevronDown className="w-4 h-4" />
-                  </button>
-                  <NewsDropdown isOpen={showNewsDropdown} onClose={() => setShowNewsDropdown(false)} />
-                </div>
+                <RouterLink
+                  to="/news"
+                  className={`nav-link ${isActive('/news') ? 'active' : ''}`}
+                >
+                  News
+                </RouterLink>
                 {user?.role === 'admin' && (
                   <RouterLink
                     to="/admin"
