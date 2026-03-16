@@ -446,10 +446,11 @@ export const Dashboard = () => {
       result = result.filter((a) => appliedFilters.priority.includes(a.priority));
     }
     if (appliedFilters.eventType && appliedFilters.eventType !== 'all') {
-      result = result.filter((a) => {
-        const eventType = String(a.event_type || '').toUpperCase();
-        return eventType === appliedFilters.eventType;
-      });
+      if (appliedFilters.eventType === 'PRICE_ALERT') {
+        result = result.filter(isPriceRelatedAlert);
+      } else if (appliedFilters.eventType === 'NEWS') {
+        result = result.filter((a) => !isPriceRelatedAlert(a));
+      }
     }
     if (appliedFilters.entity) {
       const term = appliedFilters.entity.toLowerCase();
