@@ -81,6 +81,13 @@ export const FilterSidebar = ({
     onFiltersChange({ ...filters, sources: updated });
   };
 
+  const handleSelectAllSources = () => {
+    const current = filters.sources || [];
+    const allSelected = current.length === sourceOptions.length && sourceOptions.length > 0;
+    const updated = allSelected ? [] : [...sourceOptions];
+    onFiltersChange({ ...filters, sources: updated });
+  };
+
   const activeFilterCount =
     (filters.priority?.length !== 3 ? 1 : 0) +
     (filters.eventType && filters.eventType !== 'all' ? 1 : 0) +
@@ -361,6 +368,33 @@ export const FilterSidebar = ({
 
           {openSections.sources && (
             <div className="px-3 pb-3 space-y-1.5">
+              {sourceOptions.length > 0 && (
+                <label
+                  className={`
+                    flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer
+                    transition-all duration-200 text-sm font-semibold
+                    ${(filters.sources || []).length === sourceOptions.length && sourceOptions.length > 0
+                      ? 'bg-emerald-500/20 text-emerald-300'
+                      : 'bg-white/[0.04] text-slate-300 hover:bg-white/[0.06]'
+                    }
+                  `}
+                >
+                  <div
+                    className={`w-3.5 h-3.5 rounded flex-shrink-0 border transition-all
+                      ${(filters.sources || []).length === sourceOptions.length && sourceOptions.length > 0 
+                        ? 'bg-emerald-500 border-emerald-400' 
+                        : 'border-white/30'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={(filters.sources || []).length === sourceOptions.length && sourceOptions.length > 0}
+                      onChange={handleSelectAllSources}
+                      className="sr-only"
+                    />
+                  </div>
+                  <span>Select All</span>
+                </label>
+              )}
               {sourceOptions.map((source) => {
                 const isChecked = (filters.sources || []).includes(source);
                 return (
