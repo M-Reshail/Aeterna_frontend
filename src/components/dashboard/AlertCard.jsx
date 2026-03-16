@@ -78,7 +78,6 @@ const SOURCE_COLORS = {
   CoinTelegraph: 'text-orange-400 bg-orange-500/10 border-orange-500/30',
   Decrypt: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30',
   CoinGecko: 'text-green-400 bg-green-500/10 border-green-500/30',
-  CoinMarketCap: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30',
   Twitter: 'text-sky-400 bg-sky-500/10 border-sky-500/30',
   Uniswap: 'text-pink-400 bg-pink-500/10 border-pink-500/30',
   Aave: 'text-violet-400 bg-violet-500/10 border-violet-500/30',

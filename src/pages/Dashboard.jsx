@@ -119,13 +119,12 @@ const SORT_OPTIONS = [
 
 const PRIORITY_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2 };
 const isEventItemId = (id) => String(id).startsWith('event-');
-const FALLBACK_SOURCE_OPTIONS = ['CoinDesk', 'CoinTelegraph', 'Decrypt', 'CoinGecko', 'CoinMarketCap'];
+const FALLBACK_SOURCE_OPTIONS = ['CoinDesk', 'CoinTelegraph', 'Decrypt', 'CoinGecko'];
 const SOURCE_QUERY_BY_LABEL = {
   CoinDesk: 'coindesk',
   CoinTelegraph: 'cointelegraph',
   Decrypt: 'decrypt.co',
   CoinGecko: 'coingecko',
-  CoinMarketCap: 'coinmarketcap',
 };
 
 const normalizeSourceName = (source) => {
@@ -140,8 +139,6 @@ const normalizeSourceName = (source) => {
   if (raw.includes('decrypt')) return 'Decrypt';
   // Match patterns: coingecko.com, coingecko
   if (raw.includes('coingecko')) return 'CoinGecko';
-  // Match patterns: coinmarketcap.com, coinmarketcap, cmc
-  if (raw.includes('coinmarketcap') || raw.includes('cmc')) return 'CoinMarketCap';
 
   // Keep Data Sources clean: only show known upstream providers.
   return '';
