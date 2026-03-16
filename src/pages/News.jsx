@@ -10,6 +10,9 @@ import {
   ExternalLink,
   Calendar,
   Globe,
+  Zap,
+  ArrowUpRight,
+  Clock,
 } from 'lucide-react';
 import { AlertCard } from '@components/dashboard/AlertCard';
 import eventsService from '@services/eventsService';
@@ -116,79 +119,98 @@ const News = () => {
   const stats = getPriorityStats();
 
   return (
-    <div className="min-h-screen w-full pt-24 sm:pt-28 pb-12 px-3 sm:px-4 lg:px-6 bg-gradient-to-b from-slate-900 via-[#0f172a] to-slate-900">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
+    <div className="min-h-screen w-full pt-24 sm:pt-28 pb-12 bg-gradient-to-br from-[#0f172a] via-slate-900 to-[#1a1f2e]">
+      <div className="max-w-6xl mx-auto px-3 sm:px-4 lg:px-6 space-y-8">
+        {/* Header Section */}
+        <div className="space-y-6">
+          {/* Back Button */}
           <button
             onClick={() => navigate('/dashboard')}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-white transition-all group"
           >
-            <ChevronLeft className="w-5 h-5 text-slate-400 hover:text-white" />
+            <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+            <span className="text-sm font-medium">Back to Dashboard</span>
           </button>
-          <div>
-            <h1 className="text-3xl font-bold text-white flex items-center gap-2">
-              <Globe className="w-8 h-8 text-emerald-400" />
-              All News
-            </h1>
-            <p className="text-sm text-slate-400 mt-1">High-impact market news & updates</p>
+
+          {/* Title */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center">
+                <TrendingUp className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-4xl font-bold text-white">Market News</h1>
+                <p className="text-sm text-slate-400 mt-1">High-impact financial news & updates</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Stats Grid */}
+          <div className="grid grid-cols-3 md:grid-cols-3 gap-3 lg:gap-4">
+            <div className="bg-gradient-to-br from-red-500/10 to-red-600/5 border border-red-500/30 rounded-xl p-4 hover:border-red-500/50 transition-all">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-red-400 uppercase tracking-wide">High Impact</p>
+                <p className="text-3xl font-bold text-red-300">{stats.high}</p>
+                <p className="text-xs text-red-400/70">breaking news</p>
+              </div>
+            </div>
+            <div className="bg-gradient-to-br from-amber-500/10 to-amber-600/5 border border-amber-500/30 rounded-xl p-4 hover:border-amber-500/50 transition-all">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Medium Impact</p>
+                <p className="text-3xl font-bold text-amber-300">{stats.medium}</p>
+                <p className="text-xs text-amber-400/70">important updates</p>
+              </div>
+            </div>
+            <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/30 rounded-xl p-4 hover:border-blue-500/50 transition-all">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-blue-400 uppercase tracking-wide">Low Impact</p>
+                <p className="text-3xl font-bold text-blue-300">{stats.low}</p>
+                <p className="text-xs text-blue-400/70">minor updates</p>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-gradient-to-br from-red-500/10 to-red-600/5 border border-red-500/20 rounded-lg p-4">
-            <p className="text-xs text-red-400 font-medium mb-1">High Impact</p>
-            <p className="text-2xl font-bold text-red-300">{stats.high}</p>
-          </div>
-          <div className="bg-gradient-to-br from-amber-500/10 to-amber-600/5 border border-amber-500/20 rounded-lg p-4">
-            <p className="text-xs text-amber-400 font-medium mb-1">Medium Impact</p>
-            <p className="text-2xl font-bold text-amber-300">{stats.medium}</p>
-          </div>
-          <div className="bg-gradient-to-br from-slate-500/10 to-slate-600/5 border border-slate-500/20 rounded-lg p-4">
-            <p className="text-xs text-slate-400 font-medium mb-1">Low Impact</p>
-            <p className="text-2xl font-bold text-slate-300">{stats.low}</p>
-          </div>
-        </div>
-
-        {/* Search and Filters */}
-        <div className="space-y-4 bg-white/5 backdrop-blur border border-white/10 rounded-xl p-4">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-3 w-4 h-4 text-slate-500" />
-            <input
-              type="text"
-              placeholder="Search news by title, content, or token..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 transition-all"
-            />
+        {/* Search & Filters */}
+        <div className="bg-gradient-to-br from-white/5 via-white/3 to-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+          {/* Search Bar */}
+          <div className="mb-6">
+            <div className="relative">
+              <Search className="absolute left-4 top-3.5 w-5 h-5 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Search news by title, content, or token..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 focus:bg-white/15 transition-all text-sm"
+              />
+            </div>
           </div>
 
           {/* Filter Controls */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {/* Priority Filter */}
             <div>
-              <label className="block text-xs font-semibold text-slate-400 mb-2">Priority</label>
+              <label className="block text-xs font-bold text-slate-300 mb-3 uppercase tracking-wide">Priority</label>
               <select
                 value={priorityFilter}
                 onChange={(e) => setPriorityFilter(e.target.value)}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-emerald-500/50"
+                className="w-full px-4 py-2.5 bg-white/10 border border-white/20 rounded-lg text-white text-sm font-medium focus:outline-none focus:border-emerald-500/50 focus:bg-white/15 transition-all"
               >
                 <option value="all">All Priorities</option>
-                <option value="HIGH">High Impact Only</option>
-                <option value="MEDIUM">Medium Impact</option>
-                <option value="LOW">Low Impact</option>
+                <option value="HIGH">🔴 High Impact</option>
+                <option value="MEDIUM">🟠 Medium Impact</option>
+                <option value="LOW">🔵 Low Impact</option>
               </select>
             </div>
 
             {/* Source Filter */}
             <div>
-              <label className="block text-xs font-semibold text-slate-400 mb-2">Source</label>
+              <label className="block text-xs font-bold text-slate-300 mb-3 uppercase tracking-wide">Source</label>
               <select
                 value={sourceFilter}
                 onChange={(e) => setSourceFilter(e.target.value)}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-emerald-500/50"
+                className="w-full px-4 py-2.5 bg-white/10 border border-white/20 rounded-lg text-white text-sm font-medium focus:outline-none focus:border-emerald-500/50 focus:bg-white/15 transition-all"
               >
                 <option value="all">All Sources</option>
                 {sourceOptions.map(source => (
@@ -199,11 +221,11 @@ const News = () => {
 
             {/* Sort */}
             <div>
-              <label className="block text-xs font-semibold text-slate-400 mb-2">Sort By</label>
+              <label className="block text-xs font-bold text-slate-300 mb-3 uppercase tracking-wide">Sort By</label>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-emerald-500/50"
+                className="w-full px-4 py-2.5 bg-white/10 border border-white/20 rounded-lg text-white text-sm font-medium focus:outline-none focus:border-emerald-500/50 focus:bg-white/15 transition-all"
               >
                 <option value="newest">Newest First</option>
                 <option value="oldest">Oldest First</option>
@@ -212,29 +234,33 @@ const News = () => {
             </div>
           </div>
 
-          {/* Results count */}
-          <div className="text-xs text-slate-500">
-            Found <span className="text-emerald-400 font-semibold">{sorted.length}</span> news articles
-            {(searchTerm || priorityFilter !== 'all' || sourceFilter !== 'all') && ' (filtered)'}
+          {/* Results Summary */}
+          <div className="mt-5 flex items-center justify-between">
+            <p className="text-xs text-slate-400">
+              Results: <span className="text-emerald-400 font-bold">{sorted.length}</span>
+              {(searchTerm || priorityFilter !== 'all' || sourceFilter !== 'all') && (
+                <span className="text-slate-500"> (filtered)</span>
+              )}
+            </p>
           </div>
         </div>
 
         {/* News List */}
-        <div ref={feedRef} className="space-y-2">
+        <div ref={feedRef} className="space-y-3">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 text-emerald-400 animate-spin mr-2" />
+            <div className="flex flex-col items-center justify-center py-16">
+              <Loader2 className="w-8 h-8 text-emerald-400 animate-spin mb-3" />
               <span className="text-slate-400">Loading news...</span>
             </div>
           ) : sorted.length === 0 ? (
-            <div className="text-center py-12 bg-white/5 rounded-lg border border-white/10">
-              <FilterIcon className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-              <p className="text-slate-400 mb-2">No news found</p>
+            <div className="text-center py-16 bg-gradient-to-br from-white/5 to-white/3 border border-white/10 rounded-2xl">
+              <Zap className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+              <p className="text-slate-300 mb-2 font-semibold">No news found</p>
               <p className="text-xs text-slate-500">Try adjusting your filters or search terms</p>
             </div>
           ) : (
             sorted.map(news => (
-              <div key={news.id} className="transform transition-all hover:scale-[1.01]">
+              <div key={news.id} className="group">
                 <AlertCard
                   alert={news}
                   onViewDetails={() => {}}
