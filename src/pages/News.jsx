@@ -3,6 +3,10 @@ import PropTypes from 'prop-types';
 import { useQueryClient } from '@tanstack/react-query';
 import Tooltip from '@components/common/Tooltip';
 import {
+  Bell,
+  BellRing,
+  AlertTriangle,
+  Activity,
   RefreshCw,
   Download,
   SlidersHorizontal,
@@ -146,6 +150,34 @@ const normalizeSourceName = (source) => {
 };
 
 const toApiSourceParam = (sourceLabel) => SOURCE_QUERY_BY_LABEL[sourceLabel] || '';
+
+// 
+// STAT CARD
+// 
+const ACCENT_COLORS = {
+  emerald: { icon: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', val: 'text-emerald-400' },
+  red:     { icon: 'text-red-400',     bg: 'bg-red-500/10',     border: 'border-red-500/20',     val: 'text-red-400'     },
+  amber:   { icon: 'text-amber-400',   bg: 'bg-amber-500/10',   border: 'border-amber-500/20',   val: 'text-amber-400'   },
+  blue:    { icon: 'text-blue-400',    bg: 'bg-blue-500/10',    border: 'border-blue-500/20',    val: 'text-blue-400'    },
+};
+
+const StatCard = ({ icon: Icon, label, value, subValue, accentColor = 'emerald' }) => {
+  const c = ACCENT_COLORS[accentColor] || ACCENT_COLORS.emerald;
+  return (
+    <div className="flex items-center gap-4 p-4 rounded-2xl bg-[#080808] border border-[#1A1A1A] hover:border-[#252525] transition-all duration-300">
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${c.bg} border ${c.border}`}>
+        <Icon className={`w-5 h-5 ${c.icon}`} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs text-slate-500 uppercase tracking-wider mb-0.5">{label}</p>
+        <div className="flex items-baseline gap-2">
+          <span className={`text-2xl font-bold ${c.val}`}>{value}</span>
+          {subValue && <span className="text-xs text-slate-500">{subValue}</span>}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const PRICE_KEYWORDS = [
   'price',
@@ -540,6 +572,9 @@ export const News = () => {
   }, [filtered.length, isLoadingMore, visibleCount]);
 
   const visibleAlerts = filtered.slice(0, visibleCount);
+  const unreadCount = allAlerts.filter((a) => a.status === 'new').length;
+  const highPriorityCount = allAlerts.filter((a) => a.priority === 'HIGH').length;
+  const highUnread = allAlerts.filter((a) => a.priority === 'HIGH' && a.status === 'new').length;
 
   const handleMarkAsRead = useCallback(async (id) => {
     readAlertIdsRef.current.add(String(id));
@@ -674,6 +709,14 @@ export const News = () => {
               </button>
             </Tooltip>
           </div>
+        </div>
+
+        {/* STATS ROW */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
+          <StatCard icon={Bell}          label="Total Alerts"    value={isLoading ? '...' : allAlerts.length}    subValue="all time"           accentColor="blue"    />
+          <StatCard icon={BellRing}      label="Unread"          value={isLoading ? '...' : unreadCount}         subValue="requires action"    accentColor="amber"   />
+          <StatCard icon={AlertTriangle} label="High Priority"   value={isLoading ? '...' : highPriorityCount}   subValue={`${highUnread} unread`}  accentColor="red"   />
+          <StatCard icon={Activity}      label="Sources Active"  value={isLoading ? '...' : sourceOptions.length} subValue="live feeds"          accentColor="emerald" />
         </div>
 
         {/* MAIN CONTENT: SIDEBAR + FEED */}
