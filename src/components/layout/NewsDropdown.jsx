@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, Zap, Loader2, ChevronRight, Filter } from 'lucide-react';
+import { TrendingUp, Zap, Loader2, ChevronRight } from 'lucide-react';
 import eventsService from '@services/eventsService';
+import { normalizeEvent } from '@utils/eventNormalizer';
 
 export const NewsDropdown = ({ isOpen, onClose }) => {
   const navigate = useNavigate();
@@ -18,17 +19,7 @@ export const NewsDropdown = ({ isOpen, onClose }) => {
         setIsLoading(true);
         const newsData = await eventsService.getEventsByType('news', { skip: 0, limit: 30 });
         if (Array.isArray(newsData)) {
-          const normalized = newsData.map(n => {
-            const content = n?.content || {};
-            return {
-              id: `event-${n?.id}`,
-              title: content.title || content.name || 'News',
-              source: n?.source || 'unknown',
-              priority: content.quality_score >= 70 ? 'HIGH' : content.quality_score >= 50 ? 'MEDIUM' : 'LOW',
-              timestamp: n?.timestamp || new Date().toISOString(),
-              summary: content.summary || content.alert_reasons || '',
-            };
-          });
+          const normalized = newsData.map((item) => normalizeEvent(item));
           setNews(normalized);
         }
       } catch (error) {
