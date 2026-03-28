@@ -46,6 +46,8 @@ const SORT_OPTIONS = [
   { value: 'unread',   label: 'Unread First' },
 ];
 
+const ALL_EVENT_TYPES = ['news', 'price', 'onchain'];
+
 const PRIORITY_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2 };
 const isEventItemId = (id) => String(id).startsWith('event-');
 const FALLBACK_SOURCE_OPTIONS = ['CoinDesk', 'CoinTelegraph', 'Decrypt', 'CoinGecko'];
@@ -247,11 +249,15 @@ export const Dashboard = () => {
             : eventType === 'ONCHAIN'
             ? 'onchain'
             : undefined;
-          const settled = await Promise.allSettled(
-            sourceApiParams.map((source) =>
-              eventsService.getEvents({ skip: 0, limit: 60, source, type })
-            )
-          );
+          const requests = type
+            ? sourceApiParams.map((source) => eventsService.getEvents({ skip: 0, limit: 60, source, type }))
+            : sourceApiParams.flatMap((source) =>
+                ALL_EVENT_TYPES.map((eventTypeValue) =>
+                  eventsService.getEvents({ skip: 0, limit: 40, source, type: eventTypeValue })
+                )
+              );
+
+          const settled = await Promise.allSettled(requests);
           feedResult = settled
             .filter((result) => result.status === 'fulfilled')
             .flatMap((result) => (Array.isArray(result.value) ? result.value : []))
@@ -272,9 +278,16 @@ export const Dashboard = () => {
           feedResult = await eventsService.getEventsByType('onchain', { skip: 0, limit: 60 });
           if (!Array.isArray(feedResult)) feedResult = [];
         } else {
-          // If no filter selected: fetch alerts
-          feedResult = await alertsService.getAlerts({ skip: 0, limit: 50 });
-          if (!Array.isArray(feedResult)) feedResult = [];
+          // All Types: fetch all supported types explicitly.
+          const settled = await Promise.allSettled(
+            ALL_EVENT_TYPES.map((eventTypeValue) =>
+              eventsService.getEventsByType(eventTypeValue, { skip: 0, limit: 60 })
+            )
+          );
+          feedResult = settled
+            .filter((result) => result.status === 'fulfilled')
+            .flatMap((result) => (Array.isArray(result.value) ? result.value : []))
+            .filter(Boolean);
         }
       } catch (error) {
         feedError = error;
