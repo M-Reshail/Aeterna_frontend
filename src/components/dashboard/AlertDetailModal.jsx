@@ -72,62 +72,6 @@ const safeToString = (value, fallback = '—') => {
   return fallback;
 };
 
-const asArray = (value) => (Array.isArray(value) ? value.filter(Boolean) : []);
-
-const toNumber = (value) => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-};
-
-const formatCurrency = (value) => {
-  const number = toNumber(value);
-  if (number === null) return '—';
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(number);
-};
-
-const formatCompactCurrency = (value) => {
-  const number = toNumber(value);
-  if (number === null) return '—';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    notation: 'compact',
-    maximumFractionDigits: 2,
-  }).format(number);
-};
-
-const shortenAddress = (value) => {
-  const text = safeToString(value, '');
-  if (!text || text.length <= 12) return text || '—';
-  return `${text.slice(0, 6)}...${text.slice(-4)}`;
-};
-
-const resolveType = (alert) => {
-  const rawType = String(
-    alert?.type || alert?.rawContent?.type || alert?.event_type || ''
-  ).toLowerCase();
-
-  if (rawType.includes('price')) return 'price';
-  if (rawType.includes('onchain')) return 'onchain';
-  if (rawType.includes('news')) return 'news';
-  return 'news';
-};
-
-const getChangeColor = (change) => {
-  const value = toNumber(change);
-  if (value === null) return 'text-slate-400';
-  if (value > 0) return 'text-emerald-400';
-  if (value < 0) return 'text-red-400';
-  return 'text-slate-300';
-};
-
-const formatPercent = (value) => {
-  const number = toNumber(value);
-  if (number === null) return '—';
-  return `${number >= 0 ? '+' : ''}${number.toFixed(2)}%`;
-};
-
 export const AlertDetailModal = ({
   alert,
   isOpen,
@@ -146,13 +90,11 @@ export const AlertDetailModal = ({
   const [localSentiment, setLocalSentiment] = useState(null);
   const [localComment, setLocalComment] = useState('');
   const [showComment, setShowComment] = useState(false);
-  const [showFullSummary, setShowFullSummary] = useState(false);
 
   useEffect(() => {
     setLocalSentiment(null);
     setLocalComment('');
     setShowComment(false);
-    setShowFullSummary(false);
   }, [alert?.alert_id ?? alert?.id]);
 
   const handleSubmitFeedback = useCallback(() => {
@@ -199,13 +141,6 @@ export const AlertDetailModal = ({
   const priority = PRIORITY_CONFIG[alert.priority] || PRIORITY_CONFIG.LOW;
   const IconComponent = EVENT_ICONS[alert.event_type] || EVENT_ICONS.DEFAULT;
   const isUnread = alert.status === 'new';
-  const detailType = resolveType(alert);
-  const mergedContent = { ...(alert.rawContent || {}), ...(alert.metrics ? { metrics: alert.metrics } : {}) };
-  const summaryText = safeToString(alert.summary || alert.content, 'No summary available');
-  const hasLongSummary = summaryText.length > 220;
-  const visibleSummary = hasLongSummary && !showFullSummary
-    ? `${summaryText.slice(0, 220)}...`
-    : summaryText;
 
   return createPortal(
     <div
@@ -271,16 +206,7 @@ export const AlertDetailModal = ({
 
           {/* Full content */}
           <div className="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-white/[0.03] border border-white/[0.07]">
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">{visibleSummary || 'No summary available'}</p>
-            {hasLongSummary && (
-              <button
-                type="button"
-                onClick={() => setShowFullSummary((prev) => !prev)}
-                className="mt-2 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
-              >
-                {showFullSummary ? 'Show Less' : 'Show More'}
-              </button>
-            )}
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">{safeToString(alert.content)}</p>
           </div>
 
           {/* Metadata row */}
@@ -328,34 +254,36 @@ export const AlertDetailModal = ({
           </div>
 
           {/* NEWS DETAILS SECTION */}
-          {detailType === 'news' && (
+          {alert.rawContent?.type === 'news' && alert.rawContent && (
             <div className="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-blue-500/5 border border-blue-500/20 space-y-2 sm:space-y-3">
-              <h3 className="text-xs sm:text-sm font-bold text-blue-400">News Details</h3>
+              <h3 className="text-xs sm:text-sm font-bold text-blue-400">📰 News Details</h3>
               
               <div className="grid grid-cols-2 gap-1.5 sm:gap-2 text-[10px] sm:text-xs">
-                <div>
-                  <p className="text-slate-500">Author</p>
-                  <p className="text-slate-300 font-medium truncate">{safeToString(alert.author || mergedContent.author, 'Unknown')}</p>
-                </div>
-                {toNumber(mergedContent.word_count) !== null && (
+                {alert.rawContent.author && (
+                  <div>
+                    <p className="text-slate-500">Author</p>
+                    <p className="text-slate-300 font-medium truncate">{alert.rawContent.author}</p>
+                  </div>
+                )}
+                {alert.rawContent.word_count && (
                   <div>
                     <p className="text-slate-500">Word Count</p>
-                    <p className="text-slate-300 font-medium">{toNumber(mergedContent.word_count)}</p>
+                    <p className="text-slate-300 font-medium">{alert.rawContent.word_count}</p>
                   </div>
                 )}
-                {toNumber(mergedContent.read_time_minutes) !== null && (
+                {alert.rawContent.read_time_minutes && (
                   <div>
                     <p className="text-slate-500">Read Time</p>
-                    <p className="text-slate-300 font-medium">{toNumber(mergedContent.read_time_minutes)} min</p>
+                    <p className="text-slate-300 font-medium">{alert.rawContent.read_time_minutes} min</p>
                   </div>
                 )}
-                {toNumber(mergedContent.quality_score) !== null && (
+                {typeof alert.rawContent.quality_score === 'number' && (
                   <div>
                     <p className="text-slate-500">Quality</p>
-                    <p className="text-slate-300 font-medium">{toNumber(mergedContent.quality_score)}%</p>
+                    <p className="text-slate-300 font-medium">{alert.rawContent.quality_score}%</p>
                   </div>
                 )}
-                {alert.image && (
+                {alert.rawContent.has_image && (
                   <div>
                     <p className="text-slate-500">Image</p>
                     <p className="text-emerald-400 font-medium">✓ Yes</p>
@@ -363,17 +291,11 @@ export const AlertDetailModal = ({
                 )}
               </div>
 
-              {alert.image && (
-                <div className="overflow-hidden rounded-lg border border-blue-500/20">
-                  <img src={alert.image} alt={safeToString(alert.title, 'News image')} className="w-full h-44 object-cover" />
-                </div>
-              )}
-
-              {asArray(alert.categories || mergedContent.categories).length > 0 && (
+              {alert.rawContent.categories && alert.rawContent.categories.length > 0 && (
                 <div>
                   <p className="text-slate-500 text-[10px] sm:text-xs mb-1">Categories</p>
                   <div className="flex flex-wrap gap-1">
-                    {asArray(alert.categories || mergedContent.categories).map((cat, idx) => (
+                    {alert.rawContent.categories.map((cat, idx) => (
                       <span key={idx} className="inline-flex px-1.5 sm:px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-300 text-[9px] sm:text-xs font-medium">
                         {cat}
                       </span>
@@ -382,24 +304,24 @@ export const AlertDetailModal = ({
                 </div>
               )}
 
-              {asArray(alert.hashtags || mergedContent.hashtags).length > 0 && (
+              {alert.rawContent.hashtags && alert.rawContent.hashtags.length > 0 && (
                 <div>
                   <p className="text-slate-500 text-[10px] sm:text-xs mb-1">Hashtags</p>
                   <div className="flex flex-wrap gap-1">
-                    {asArray(alert.hashtags || mergedContent.hashtags).map((tag, idx) => (
+                    {alert.rawContent.hashtags.map((tag, idx) => (
                       <span key={idx} className="text-blue-300 text-[9px] sm:text-xs">
-                        {String(tag).startsWith('#') ? tag : `#${tag}`}
+                        #{tag}
                       </span>
                     ))}
                   </div>
                 </div>
               )}
 
-              {asArray(alert.mentions || mergedContent.mentions).length > 0 && (
+              {alert.rawContent.mentions && alert.rawContent.mentions.length > 0 && (
                 <div>
                   <p className="text-slate-500 text-[10px] sm:text-xs mb-1">Mentions</p>
                   <div className="flex flex-wrap gap-1">
-                    {asArray(alert.mentions || mergedContent.mentions).map((mention, idx) => (
+                    {alert.rawContent.mentions.map((mention, idx) => (
                       <span key={idx} className="inline-flex px-1.5 sm:px-2 py-0.5 rounded-md bg-slate-500/20 text-slate-300 text-[9px] sm:text-xs font-medium">
                         {mention}
                       </span>
@@ -408,9 +330,9 @@ export const AlertDetailModal = ({
                 </div>
               )}
 
-              {(alert.link || mergedContent.link) && (
+              {alert.rawContent.link && (
                 <a
-                  href={alert.link || mergedContent.link}
+                  href={alert.rawContent.link}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-semibold border border-blue-500/30 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 transition-all active:scale-95"
@@ -423,156 +345,92 @@ export const AlertDetailModal = ({
           )}
 
           {/* PRICE DETAILS SECTION */}
-          {detailType === 'price' && (
+          {alert.rawContent?.type === 'price' && alert.rawContent && (
             <div className="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-2 sm:space-y-3">
-              <h3 className="text-xs sm:text-sm font-bold text-amber-400">Price Data</h3>
+              <h3 className="text-xs sm:text-sm font-bold text-amber-400">💰 Price Data</h3>
 
               <div className="grid grid-cols-2 gap-1.5 sm:gap-2 text-[10px] sm:text-xs">
-                <div>
-                  <p className="text-slate-500">Asset</p>
-                  <p className="text-slate-300 font-bold text-sm">
-                    {safeToString(alert.name || mergedContent.name, 'Unknown')} {safeToString(alert.symbol || mergedContent.symbol, '').trim() ? `(${safeToString(alert.symbol || mergedContent.symbol, '').toUpperCase()})` : ''}
-                  </p>
-                </div>
-                {toNumber(mergedContent.current_price) !== null && (
+                {alert.rawContent.symbol && (
+                  <div>
+                    <p className="text-slate-500">Symbol</p>
+                    <p className="text-slate-300 font-bold text-sm">{alert.rawContent.symbol}</p>
+                  </div>
+                )}
+                {alert.rawContent.current_price && (
                   <div>
                     <p className="text-slate-500">Current Price</p>
-                    <p className="text-slate-300 font-bold text-sm">{formatCurrency(mergedContent.current_price)}</p>
+                    <p className="text-slate-300 font-bold text-sm">${alert.rawContent.current_price.toLocaleString()}</p>
                   </div>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 text-[9px] sm:text-xs">
-                {toNumber(mergedContent.price_change_1h_pct) !== null && (
+              <div className="grid grid-cols-3 gap-1 text-[9px] sm:text-xs">
+                {typeof alert.rawContent.price_change_1h_pct === 'number' && (
                   <div className="p-1.5 sm:p-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
                     <p className="text-slate-500 text-[8px] sm:text-[10px]">1H</p>
-                    <p className={`font-bold ${getChangeColor(mergedContent.price_change_1h_pct)}`}>
-                      {formatPercent(mergedContent.price_change_1h_pct)}
+                    <p className={`font-bold ${alert.rawContent.price_change_1h_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {alert.rawContent.price_change_1h_pct >= 0 ? '+' : ''}{alert.rawContent.price_change_1h_pct.toFixed(2)}%
                     </p>
                   </div>
                 )}
-                {toNumber(mergedContent.price_change_24h_pct) !== null && (
+                {typeof alert.rawContent.price_change_24h_pct === 'number' && (
                   <div className="p-1.5 sm:p-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
                     <p className="text-slate-500 text-[8px] sm:text-[10px]">24H</p>
-                    <p className={`font-bold ${getChangeColor(mergedContent.price_change_24h_pct)}`}>
-                      {formatPercent(mergedContent.price_change_24h_pct)}
+                    <p className={`font-bold ${alert.rawContent.price_change_24h_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {alert.rawContent.price_change_24h_pct >= 0 ? '+' : ''}{alert.rawContent.price_change_24h_pct.toFixed(2)}%
                     </p>
                   </div>
                 )}
-                {toNumber(mergedContent.price_change_7d_pct) !== null && (
+                {typeof alert.rawContent.price_change_7d_pct === 'number' && (
                   <div className="p-1.5 sm:p-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
                     <p className="text-slate-500 text-[8px] sm:text-[10px]">7D</p>
-                    <p className={`font-bold ${getChangeColor(mergedContent.price_change_7d_pct)}`}>
-                      {formatPercent(mergedContent.price_change_7d_pct)}
-                    </p>
-                  </div>
-                )}
-                {toNumber(mergedContent.price_change_30d_pct) !== null && (
-                  <div className="p-1.5 sm:p-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-                    <p className="text-slate-500 text-[8px] sm:text-[10px]">30D</p>
-                    <p className={`font-bold ${getChangeColor(mergedContent.price_change_30d_pct)}`}>
-                      {formatPercent(mergedContent.price_change_30d_pct)}
+                    <p className={`font-bold ${alert.rawContent.price_change_7d_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {alert.rawContent.price_change_7d_pct >= 0 ? '+' : ''}{alert.rawContent.price_change_7d_pct.toFixed(2)}%
                     </p>
                   </div>
                 )}
               </div>
 
               <div className="grid grid-cols-2 gap-1.5 sm:gap-2 text-[10px] sm:text-xs">
-                {toNumber(mergedContent.ath) !== null && (
+                {alert.rawContent.ath && (
                   <div>
                     <p className="text-slate-500">ATH</p>
-                    <p className="text-slate-300 font-medium">{formatCurrency(mergedContent.ath)}</p>
+                    <p className="text-slate-300 font-medium">${alert.rawContent.ath.toLocaleString()}</p>
                   </div>
                 )}
-                {toNumber(mergedContent.atl) !== null && (
+                {alert.rawContent.atl && (
                   <div>
                     <p className="text-slate-500">All-Time Low</p>
-                    <p className="text-slate-300 font-medium">{formatCurrency(mergedContent.atl)}</p>
+                    <p className="text-slate-300 font-medium">${alert.rawContent.atl.toLocaleString()}</p>
                   </div>
                 )}
-                {toNumber(mergedContent.market_cap) !== null && (
+                {alert.rawContent.market_cap && (
                   <div>
                     <p className="text-slate-500">Market Cap</p>
-                    <p className="text-slate-300 font-medium">{formatCompactCurrency(mergedContent.market_cap)}</p>
+                    <p className="text-slate-300 font-medium">${(alert.rawContent.market_cap / 1e9).toFixed(2)}B</p>
                   </div>
                 )}
-                {toNumber(mergedContent.trading_volume_24h ?? mergedContent.volume) !== null && (
+                {alert.rawContent.trading_volume_24h && (
                   <div>
                     <p className="text-slate-500">24H Volume</p>
-                    <p className="text-slate-300 font-medium">{formatCompactCurrency(mergedContent.trading_volume_24h ?? mergedContent.volume)}</p>
-                  </div>
-                )}
-                {toNumber(mergedContent.volatility) !== null && (
-                  <div>
-                    <p className="text-slate-500">Volatility</p>
-                    <p className="text-slate-300 font-medium">{formatPercent(mergedContent.volatility)}</p>
+                    <p className="text-slate-300 font-medium">${(alert.rawContent.trading_volume_24h / 1e9).toFixed(2)}B</p>
                   </div>
                 )}
               </div>
 
-              {(alert.alert_reason || mergedContent.alert_reason || mergedContent.alert_reasons) && (
+              {alert.rawContent.alert_reasons && (
                 <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
                   <p className="text-slate-500 text-xs mb-1">Alert Reason</p>
-                  <p className="text-amber-300 text-xs font-medium">{safeToString(alert.alert_reason || mergedContent.alert_reason || mergedContent.alert_reasons)}</p>
+                  <p className="text-amber-300 text-xs font-medium">{alert.rawContent.alert_reasons}</p>
                 </div>
               )}
 
-              {asArray(alert.significant_moves || mergedContent.significant_moves).length > 0 && (
+              {alert.rawContent.significant_moves && alert.rawContent.significant_moves.length > 0 && (
                 <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
                   <p className="text-slate-500 text-xs mb-1">Significant Moves</p>
-                  {asArray(alert.significant_moves || mergedContent.significant_moves).map((move, idx) => (
+                  {alert.rawContent.significant_moves.map((move, idx) => (
                     <p key={idx} className="text-amber-300 text-xs font-medium">• {move}</p>
                   ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ONCHAIN DETAILS SECTION */}
-          {detailType === 'onchain' && (
-            <div className="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-emerald-500/5 border border-emerald-500/20 space-y-2 sm:space-y-3">
-              <h3 className="text-xs sm:text-sm font-bold text-emerald-400">On-chain Activity</h3>
-
-              <div className="grid grid-cols-2 gap-1.5 sm:gap-2 text-[10px] sm:text-xs">
-                <div>
-                  <p className="text-slate-500">Token</p>
-                  <p className="text-slate-300 font-medium">{safeToString(alert.token || mergedContent.token || mergedContent.symbol || mergedContent.name, '—')}</p>
-                </div>
-                <div>
-                  <p className="text-slate-500">Amount</p>
-                  <p className="text-slate-300 font-medium">{safeToString(alert.amount || mergedContent.amount, '—')}</p>
-                </div>
-                <div>
-                  <p className="text-slate-500">USD Value</p>
-                  <p className="text-slate-300 font-medium">{formatCurrency(alert.usd_value ?? mergedContent.usd_value)}</p>
-                </div>
-                <div>
-                  <p className="text-slate-500">Blockchain</p>
-                  <p className="text-slate-300 font-medium">{safeToString(alert.blockchain || mergedContent.blockchain, '—')}</p>
-                </div>
-                <div>
-                  <p className="text-slate-500">Transaction Type</p>
-                  <p className="text-slate-300 font-medium">{safeToString(alert.transaction_type || mergedContent.transaction_type || mergedContent.tx_type, '—')}</p>
-                </div>
-                <div>
-                  <p className="text-slate-500">Priority</p>
-                  <span className="inline-flex px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold">
-                    {safeToString(alert.priority, 'LOW')}
-                  </span>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2">
-                <p className="text-slate-500 text-xs mb-1">Transfer Path</p>
-                <p className="text-emerald-300 text-xs font-medium break-all">
-                  {shortenAddress(alert.from || mergedContent.from || mergedContent.from_address)} → {shortenAddress(alert.to || mergedContent.to || mergedContent.to_address)}
-                </p>
-              </div>
-
-              {(alert.alert_reason || mergedContent.alert_reason || mergedContent.alert_reasons) && (
-                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2">
-                  <p className="text-slate-500 text-xs mb-1">Alert Reason</p>
-                  <p className="text-emerald-300 text-xs font-medium">{safeToString(alert.alert_reason || mergedContent.alert_reason || mergedContent.alert_reasons)}</p>
                 </div>
               )}
             </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import PropTypes from 'prop-types';
 import {
   TrendingUp,
@@ -31,20 +31,6 @@ const asArray = (value) => (Array.isArray(value) ? value : []);
 const toHashtag = (value) => {
   const raw = safeToString(value, '').replace(/[^a-zA-Z0-9\s_-]/g, '').trim();
   return raw ? `#${raw.replace(/\s+/g, '_')}` : '';
-};
-
-const toNumber = (value) => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-};
-
-const resolveType = (alert) => {
-  const rawType = String(alert?.type || alert?.rawContent?.type || alert?.event_type || '').toLowerCase();
-  if (rawType.includes('price')) return 'price';
-  if (rawType.includes('onchain')) return 'onchain';
-  if (rawType.includes('news')) return 'news';
-  return 'news';
 };
 
 // Event type icon mapping
@@ -99,21 +85,12 @@ const SOURCE_COLORS = {
 };
 
 export const AlertCard = ({ alert, onViewDetails, onMarkAsRead }) => {
-  const [showFullSummary, setShowFullSummary] = useState(false);
   const priority = PRIORITY_CONFIG[alert.priority] || PRIORITY_CONFIG.LOW;
   const IconComponent = EVENT_ICONS[alert.event_type] || EVENT_ICONS.DEFAULT;
   const sourceColor = SOURCE_COLORS[alert.source] || SOURCE_COLORS.DEFAULT;
   const isUnread = alert.status === 'new';
-  const typeKey = resolveType(alert);
   const author = safeToString(alert.author || alert?.rawContent?.author, 'Unknown author');
   const articleLink = safeToString(alert.link || alert?.rawContent?.link, '');
-  const summaryText = safeToString(alert.summary || alert.content, 'No summary available');
-  const isLongSummary = summaryText.length > 140;
-  const visibleSummary = isLongSummary && !showFullSummary
-    ? `${summaryText.slice(0, 140)}...`
-    : summaryText;
-  const alertReason = safeToString(alert.alert_reason || alert?.rawContent?.alert_reason || alert?.rawContent?.alert_reasons, '');
-  const price24h = toNumber(alert?.metrics?.price_change_24h_pct ?? alert?.rawContent?.price_change_24h_pct);
   const categories = asArray(alert.categories?.length ? alert.categories : alert?.rawContent?.categories)
     .map((item) => safeToString(item, '').trim())
     .filter(Boolean)
@@ -190,35 +167,13 @@ export const AlertCard = ({ alert, onViewDetails, onMarkAsRead }) => {
         </h4>
 
         {/* Content preview */}
-        <p className="text-[11px] sm:text-xs text-slate-500 leading-relaxed">
-          {visibleSummary}
+        <p className="text-[11px] sm:text-xs text-slate-500 line-clamp-2 leading-relaxed">
+          {safeToString(alert.content)}
         </p>
-        {isLongSummary && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowFullSummary((prev) => !prev);
-            }}
-            className="mt-1 text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors"
-          >
-            {showFullSummary ? 'Show less' : 'Show more'}
-          </button>
-        )}
 
         {/* Author + article link */}
         <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] sm:text-[11px] text-slate-500">
           <span className="truncate">By {author}</span>
-          {typeKey === 'price' && price24h !== null && (
-            <span className={`px-1.5 py-0.5 rounded-md border text-[10px] ${price24h >= 0 ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10' : 'text-red-300 border-red-500/30 bg-red-500/10'}`}>
-              24H: {price24h >= 0 ? '+' : ''}{price24h.toFixed(2)}%
-            </span>
-          )}
-          {alertReason && (
-            <span className="px-1.5 py-0.5 rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-300 text-[10px]">
-              Alert: {alertReason}
-            </span>
-          )}
           {articleLink && (
             <a
               href={articleLink}

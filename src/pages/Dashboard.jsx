@@ -24,7 +24,6 @@ import { useToast } from '@hooks/useToast';
 import feedbackService from '@services/feedbackService';
 import alertsService from '@services/alertsService';
 import eventsService from '@services/eventsService';
-import { normalizeEvent, debugLogNormalizedEvents } from '@utils/eventNormalizer';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NORMALIZERS
@@ -62,6 +61,19 @@ const toDisplayText = (value, fallback = '') => {
   return fallback;
 };
 
+const normalizeCategories = (value) => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => toDisplayText(item, '').trim())
+    .filter(Boolean);
+};
+
+const toHashtag = (value) => {
+  const cleaned = toDisplayText(value, '')
+    .replace(/[^a-zA-Z0-9\s_-]/g, '')
+    .trim();
+  return cleaned ? `#${cleaned.replace(/\s+/g, '_')}` : '';
+};
 
 const inferEventType = (title = '') => {
   const lower = toDisplayText(title, '').toLowerCase();
@@ -82,7 +94,50 @@ const normalizeAlert = (alert) => ({
   entity: toDisplayText(alert.entity, ''),
 });
 
-const normalizeNewsEvent = (event) => normalizeEvent(event);
+const normalizeNewsEvent = (event) => {
+  const content = event?.content || {};
+  const title = toDisplayText(
+    content.title,
+    toDisplayText(event?.title, toDisplayText(content.name, `News from ${toDisplayText(event?.source, 'source')}`))
+  );
+  const summary = toDisplayText(
+    content.summary,
+    toDisplayText(event?.summary, toDisplayText(content.alert_reasons, 'No summary available'))
+  );
+  const link = toDisplayText(content.link, toDisplayText(event?.link, ''));
+  const author = toDisplayText(content.author, toDisplayText(event?.author, 'Unknown author'));
+  const categories = normalizeCategories(content.categories?.length ? content.categories : event?.categories);
+  const hashtags = categories.map(toHashtag).filter(Boolean);
+
+  return {
+    id: `event-${event?.id}`,
+    event_id: event?.id,
+    event_type: String(event?.type || 'news').toUpperCase(),
+    source: toDisplayText(event?.source, 'unknown'),
+    title,
+    content: summary,
+    summary,
+    link,
+    author,
+    categories,
+    hashtags,
+    priority: content.quality_score >= 70 ? 'HIGH' : content.quality_score >= 50 ? 'MEDIUM' : 'LOW',
+    status: 'new',
+    timestamp: event?.timestamp || new Date().toISOString(),
+    entity: toDisplayText(content.id, toDisplayText(content.symbol, toDisplayText(content.name, ''))),
+    // Preserve raw content for detailed view
+    rawContent: {
+      ...content,
+      title,
+      summary,
+      link,
+      author,
+      categories,
+      hashtags,
+      type: event?.type,
+    },
+  };
+};
 
 const DEFAULT_FILTERS = {
   priority: ['HIGH', 'MEDIUM', 'LOW'],
@@ -145,8 +200,6 @@ const PRICE_KEYWORDS = [
 ];
 
 const isPriceRelatedAlert = (item) => {
-  if (String(item?.type || '').toLowerCase() === 'price') return true;
-
   const eventType = String(item?.event_type || '').toLowerCase();
   if (eventType.includes('price')) return true;
 
@@ -317,14 +370,6 @@ export const Dashboard = () => {
         ? feedResult.flat().filter(Boolean).map(normalizeNewsEvent)
         : feedResult.map(normalizeAlert);
 
-      if (sourceApiParams.length > 0 || eventType !== 'all') {
-        debugLogNormalizedEvents(
-          feedResult,
-          normalizedAlerts,
-          `/dashboard feed items=${Array.isArray(feedResult) ? feedResult.length : 0}`
-        );
-      }
-
       setAllAlerts((prev) => {
         const merged = mergeAlertsPreservingReadState(prev, normalizedAlerts, readAlertIdsRef.current);
 
@@ -443,7 +488,7 @@ export const Dashboard = () => {
 
   useEffect(() => {
     const handleIncomingAlert = (incoming) => {
-      const normalized = incoming?.content ? normalizeEvent(incoming) : normalizeAlert(incoming || {});
+      const normalized = normalizeAlert(incoming || {});
       if (!normalized?.id) return;
 
       setSourceOptions((prev) => {
