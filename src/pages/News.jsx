@@ -263,6 +263,7 @@ export const News = () => {
   const [appliedFilters, setAppliedFilters] = useState(DEFAULT_FILTERS);
   const [sortBy, setSortBy]               = useState('newest');
   const [selectedAlert, setSelectedAlert] = useState(null);
+  const [expandedCardId, setExpandedCardId] = useState(null);
   const [isLoading, setIsLoading]         = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [visibleCount, setVisibleCount]   = useState(8);
@@ -591,6 +592,10 @@ export const News = () => {
     });
   }, []);
 
+  const handleToggleExpand = useCallback((id) => {
+    setExpandedCardId((prev) => (prev === id ? null : id));
+  }, []);
+
   const handleDismiss = useCallback(async (id) => {
     const previous = allAlerts;
     setAllAlerts((prev) => prev.filter((a) => a.id !== id));
@@ -634,10 +639,12 @@ export const News = () => {
     setFilters(DEFAULT_FILTERS);
     setAppliedFilters(DEFAULT_FILTERS);
     setVisibleCount(8);
+    setExpandedCardId(null);
   };
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
+    setExpandedCardId(null);
     await loadDashboardData(appliedFilters.sources || [], appliedFilters.eventType || 'all');
     setIsRefreshing(false);
   };
@@ -861,6 +868,8 @@ export const News = () => {
                         alert={alert}
                         onViewDetails={handleOpenAlert}
                         onMarkAsRead={handleMarkAsRead}
+                        expandedCardId={expandedCardId}
+                        onToggleExpand={handleToggleExpand}
                       />
                     </div>
                   ))}
