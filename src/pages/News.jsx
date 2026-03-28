@@ -308,29 +308,6 @@ export const News = () => {
         feedResult = [];
       }
 
-      // Fallback: some backends intermittently return empty for source-scoped news queries.
-      if (eventType === 'NEWS' && (!Array.isArray(feedResult) || feedResult.length === 0)) {
-        try {
-          const fallbackNews = await eventsService.getEvents({ skip: 0, limit: 120, type: 'news' });
-          if (Array.isArray(fallbackNews)) {
-            if (sourceApiParams.length > 0) {
-              const sourceNeedles = sourceApiParams.map((source) => String(source || '').toLowerCase()).filter(Boolean);
-              feedResult = fallbackNews.filter((item) => {
-                const src = String(item?.source || '').toLowerCase();
-                return sourceNeedles.some((needle) => src.includes(needle) || needle.includes(src));
-              });
-            } else {
-              feedResult = fallbackNews;
-            }
-            if (feedResult.length > 0) {
-              feedError = null;
-            }
-          }
-        } catch (fallbackError) {
-          console.warn('Fallback news fetch failed:', fallbackError?.message || fallbackError);
-        }
-      }
-
       // Normalize based on event type
       const isEventsFeed = sourceApiParams.length > 0 || eventType !== 'all';
       const normalizedAlerts = normalizeFeedItems((Array.isArray(feedResult) ? feedResult : []).flat().filter(Boolean));
