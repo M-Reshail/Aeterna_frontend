@@ -32,6 +32,12 @@ const toText = (value, fallback = '') => {
 
 const toNumber = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const normalized = value.replace(/,/g, '').trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 };
@@ -72,6 +78,78 @@ const shortenAddress = (address) => {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 };
 
+const addThousandsSeparators = (digits) => {
+  const normalized = String(digits || '0').replace(/^0+(?=\d)/, '') || '0';
+  return normalized.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+};
+
+const toIntegerString = (value) => {
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (Number.isInteger(value)) return String(value);
+    return null;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.replace(/,/g, '').trim();
+    if (/^-?\d+$/.test(normalized)) return normalized;
+    return null;
+  }
+  return null;
+};
+
+const formatTokenAmount = (rawAmount, tokenDecimals) => {
+  const amountInteger = toIntegerString(rawAmount);
+  if (!amountInteger) return '';
+
+  const decimalsNumber = toNumber(tokenDecimals);
+  const decimals = Number.isInteger(decimalsNumber) && decimalsNumber >= 0 ? decimalsNumber : 0;
+
+  const sign = amountInteger.startsWith('-') ? '-' : '';
+  const unsigned = sign ? amountInteger.slice(1) : amountInteger;
+
+  if (decimals === 0) {
+    return `${sign}${addThousandsSeparators(unsigned)}`;
+  }
+
+  const padded = unsigned.padStart(decimals + 1, '0');
+  const integerPart = padded.slice(0, -decimals);
+  const fractionPart = padded.slice(-decimals).replace(/0+$/, '');
+  const compactFraction = fractionPart.slice(0, 6);
+
+  if (!compactFraction) {
+    return `${sign}${addThousandsSeparators(integerPart)}`;
+  }
+
+  return `${sign}${addThousandsSeparators(integerPart)}.${compactFraction}`;
+};
+
+const formatUsdValue = (value) => {
+  const parsed = toNumber(value);
+  if (parsed === null) return '';
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: parsed >= 1000 ? 0 : 2,
+  }).format(parsed);
+};
+
+const inferLegacyType = (item = {}) => {
+  const declared = toText(item.event_type, '').toLowerCase();
+  if (declared.includes('onchain')) return 'onchain';
+  if (declared.includes('price')) return 'price';
+  if (declared.includes('news')) return 'news';
+
+  const title = toText(item.title, '').toLowerCase();
+  if (title.includes('transfer') || title.includes('wallet') || title.includes('on-chain')) return 'onchain';
+  if (title.includes('price') || title.includes('ath') || title.includes('atl')) return 'price';
+  return 'news';
+};
+
+const normalizeLegacyStatus = (status) => {
+  if (status === 'pending') return 'new';
+  return toText(status, 'new');
+};
+
 export const normalizeEvent = (event) => {
   const content = isPlainObject(event?.content) ? { ...event.content } : {};
   const type = normalizeType(event?.type);
@@ -84,10 +162,7 @@ export const normalizeEvent = (event) => {
     null
   );
 
-  const title = toText(
-    firstDefined(content.title, content.name, event?.title),
-    `Event from ${toText(event?.source, 'unknown source')}`
-  );
+  const explicitTitle = toText(firstDefined(content.title, event?.title), '');
 
   const summary = toText(
     firstDefined(content.summary, content.description, content.alert_reasons, event?.summary),
@@ -108,6 +183,32 @@ export const normalizeEvent = (event) => {
 
   const fromAddress = toText(firstDefined(content.from, content.from_address, content.sender), '');
   const toAddress = toText(firstDefined(content.to, content.to_address, content.receiver), '');
+  const fromShort = shortenAddress(fromAddress);
+  const toShort = shortenAddress(toAddress);
+
+  const tokenDecimals = firstDefined(content.token_decimals, content.decimals, content.tokenDecimals, null);
+  const normalizedToken = toText(firstDefined(content.token, content.symbol, content.name), 'TOKEN');
+  const amountRaw = firstDefined(content.amount, content.value, null);
+  const usdRaw = firstDefined(content.usd_value, content.value_usd, null);
+  const amountNumericText = formatTokenAmount(amountRaw, tokenDecimals);
+  const amountFormatted = amountNumericText ? `${amountNumericText} ${normalizedToken}` : '';
+  const usdFormatted = formatUsdValue(usdRaw);
+
+  const generatedOnchainTitle = usdFormatted
+    ? `Transfer of ${usdFormatted} ${normalizedToken}`
+    : amountFormatted
+    ? `Transfer of ${amountFormatted}`
+    : `Transfer of ${normalizedToken}`;
+
+  const title = explicitTitle || (type === 'onchain'
+    ? generatedOnchainTitle
+    : toText(firstDefined(content.name), `Event from ${toText(event?.source, 'unknown source')}`));
+
+  const direction = fromShort && toShort ? `${fromShort} → ${toShort}` : '';
+  const priorityReason = toText(
+    firstDefined(content.alert_reason, content.alert_reasons, content.reason, content.priority_reason),
+    ''
+  );
 
   const metrics = {
     word_count: toNumber(content.word_count),
@@ -149,14 +250,22 @@ export const normalizeEvent = (event) => {
     significant_moves: toArray(content.significant_moves),
     alert_reason: toText(firstDefined(content.alert_reason, content.alert_reasons), ''),
     transaction_type: toText(firstDefined(content.transaction_type, content.tx_type), ''),
+    txType: toText(firstDefined(content.transaction_type, content.tx_type), ''),
     blockchain: toText(content.blockchain, ''),
-    token: toText(firstDefined(content.token, content.symbol, content.name), ''),
-    amount: firstDefined(content.amount, content.value, null),
-    usd_value: firstDefined(content.usd_value, content.value_usd, null),
+    token: normalizedToken,
+    token_decimals: toNumber(tokenDecimals),
+    amount: amountRaw,
+    amountFormatted,
+    usd_value: usdRaw,
+    usdFormatted,
     from: fromAddress,
     to: toAddress,
-    from_short: shortenAddress(fromAddress),
-    to_short: shortenAddress(toAddress),
+    from_short: fromShort,
+    to_short: toShort,
+    fromShort,
+    toShort,
+    direction,
+    priorityReason,
     entity: toText(firstDefined(content.id, content.symbol, content.token, content.name), ''),
     priority: inferPriority(content),
     status: 'new',
@@ -173,6 +282,56 @@ export const normalizeEvent = (event) => {
       metrics,
     },
     raw: event,
+  };
+};
+
+export const normalizeFeedItem = (item) => {
+  if (!item || typeof item !== 'object') return null;
+
+  // Event API items already include nested content payloads.
+  if (isPlainObject(item.content)) {
+    return normalizeEvent(item);
+  }
+
+  // Legacy alert payloads are top-level fields. Map them into the same shape first.
+  const mappedEvent = {
+    id: item.id ?? item.alert_id,
+    source: item.source,
+    timestamp: item.timestamp || item.created_at || item.createdAt,
+    type: inferLegacyType(item),
+    content: {
+      title: item.title,
+      summary: firstDefined(item.content, item.description),
+      priority: item.priority,
+      symbol: item.symbol,
+      token: item.token,
+      blockchain: item.blockchain,
+      transaction_type: firstDefined(item.transaction_type, item.tx_type),
+      amount: firstDefined(item.amount, item.value),
+      usd_value: firstDefined(item.usd_value, item.value_usd),
+      from: firstDefined(item.from, item.from_address, item.sender),
+      to: firstDefined(item.to, item.to_address, item.receiver),
+      alert_reason: firstDefined(item.alert_reason, item.alert_reasons, item.reason),
+      entity: item.entity,
+    },
+  };
+
+  const normalized = normalizeEvent(mappedEvent);
+  const preservedId = item.alert_id ?? item.id;
+
+  return {
+    ...normalized,
+    id: preservedId,
+    alert_id: preservedId,
+    status: normalizeLegacyStatus(item.status),
+    priority: toText(item.priority, normalized.priority),
+    event_type: toText(item.event_type, normalized.event_type || 'NEWS').toUpperCase(),
+    entity: toText(firstDefined(item.entity, normalized.entity), ''),
+    raw: item,
+    rawContent: {
+      ...(normalized.rawContent || {}),
+      legacy_alert: true,
+    },
   };
 };
 

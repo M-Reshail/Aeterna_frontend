@@ -18,6 +18,7 @@ import {
 import { AlertCard } from '@components/dashboard/AlertCard';
 import { AlertDetailModal } from '@components/dashboard/AlertDetailModal';
 import { FilterSidebar } from '@components/dashboard/FilterSidebar';
+import { DynamicFilterToggles } from '@components/dashboard/DynamicFilterToggles';
 import { useSocket } from '@hooks/useSocket';
 import { WS_EVENTS } from '@utils/constants';
 import { useAuth } from '@hooks/useAuth';
@@ -25,65 +26,8 @@ import { useToast } from '@hooks/useToast';
 import feedbackService from '@services/feedbackService';
 import alertsService from '@services/alertsService';
 import eventsService from '@services/eventsService';
-import { normalizeEvent, debugLogNormalizedEvents } from '@utils/eventNormalizer';
-
-// 
-// NORMALIZERS
-// 
-const normalizeStatus = (status) => {
-  if (status === 'pending') return 'new';
-  return status || 'new';
-};
-
-const toDisplayText = (value, fallback = '') => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed || fallback;
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-
-  if (Array.isArray(value)) {
-    const joined = value
-      .map((item) => (typeof item === 'string' ? item.trim() : String(item ?? '')))
-      .filter(Boolean)
-      .join(', ');
-    return joined || fallback;
-  }
-
-  if (value && typeof value === 'object') {
-    const candidate = value.summary || value.title || value.name || value.link || value.description;
-    if (typeof candidate === 'string' && candidate.trim()) {
-      return candidate.trim();
-    }
-  }
-
-  return fallback;
-};
-
-
-const inferEventType = (title = '') => {
-  const lower = toDisplayText(title, '').toLowerCase();
-  if (lower.includes('price')) return 'PRICE_ALERT';
-  return 'NEWS';
-};
-
-const normalizeAlert = (alert) => ({
-  id: alert.alert_id ?? alert.id,
-  alert_id: alert.alert_id ?? alert.id,
-  event_type: toDisplayText(alert.event_type, inferEventType(alert.title)).toUpperCase(),
-  source: toDisplayText(alert.source, 'Unknown'),
-  title: toDisplayText(alert.title, 'Untitled Alert'),
-  content: toDisplayText(alert.content, toDisplayText(alert.description, toDisplayText(alert.title, 'No details provided'))),
-  priority: alert.priority || 'LOW',
-  status: normalizeStatus(alert.status),
-  timestamp: alert.created_at || alert.timestamp || alert.createdAt || new Date().toISOString(),
-  entity: toDisplayText(alert.entity, ''),
-});
-
-const normalizeNewsEvent = (event) => normalizeEvent(event);
+import { normalizeFeedItem, debugLogNormalizedEvents } from '@utils/eventNormalizer';
+import { applyDynamicFilters } from '@utils/eventFilters';
 
 const DEFAULT_FILTERS = {
   priority: ['HIGH', 'MEDIUM', 'LOW'],
@@ -93,6 +37,7 @@ const DEFAULT_FILTERS = {
   dateTo: '',
   sources: [],
   contentFilter: 'all',
+  dynamicFilters: [],
 };
 
 const SORT_OPTIONS = [
@@ -357,9 +302,11 @@ export const News = () => {
 
       // Normalize based on event type
       const isEventsFeed = sourceApiParams.length > 0 || eventType !== 'all';
-      const normalizedAlerts = (sourceApiParams.length > 0 || (eventType !== 'all' && !sourceApiParams.length))
-        ? feedResult.flat().filter(Boolean).map(normalizeNewsEvent)
-        : feedResult.map(normalizeAlert);
+      const normalizedAlerts = (Array.isArray(feedResult) ? feedResult : [])
+        .flat()
+        .filter(Boolean)
+        .map(normalizeFeedItem)
+        .filter(Boolean);
 
       if (isEventsFeed) {
         debugLogNormalizedEvents(
@@ -429,7 +376,7 @@ export const News = () => {
 
   useEffect(() => {
     const handleIncomingAlert = (incoming) => {
-      const normalized = incoming?.content ? normalizeEvent(incoming) : normalizeAlert(incoming || {});
+      const normalized = normalizeFeedItem(incoming || {});
       if (!normalized?.id) return;
 
       setSourceOptions((prev) => {
@@ -525,6 +472,9 @@ export const News = () => {
     }
     if (appliedFilters.contentFilter === 'price') {
       result = result.filter(isPriceRelatedAlert);
+    }
+    if ((appliedFilters.dynamicFilters?.length ?? 0) > 0) {
+      result = applyDynamicFilters(result, appliedFilters.dynamicFilters);
     }
 
     const sorted = [...result];
@@ -644,6 +594,18 @@ export const News = () => {
     setFilterOpen(false);
   };
 
+  const handleToggleDynamicFilter = useCallback((filterKey) => {
+    const current = appliedFilters.dynamicFilters || [];
+    const next = current.includes(filterKey)
+      ? current.filter((key) => key !== filterKey)
+      : [...current, filterKey];
+
+    const nextFilters = { ...appliedFilters, dynamicFilters: next };
+    setAppliedFilters(nextFilters);
+    setFilters((prev) => ({ ...prev, dynamicFilters: next }));
+    setVisibleCount(8);
+  }, [appliedFilters]);
+
   const handleClearFilters = () => {
     setFilters(DEFAULT_FILTERS);
     setAppliedFilters(DEFAULT_FILTERS);
@@ -669,7 +631,8 @@ export const News = () => {
     !!appliedFilters.dateFrom ||
     !!appliedFilters.dateTo ||
     (appliedFilters.sources?.length ?? 0) > 0 ||
-    appliedFilters.contentFilter === 'price';
+    appliedFilters.contentFilter === 'price' ||
+    (appliedFilters.dynamicFilters?.length ?? 0) > 0;
 
   const currentSortLabel = SORT_OPTIONS.find((s) => s.value === sortBy)?.label || 'Newest First';
 
@@ -804,6 +767,12 @@ export const News = () => {
             </div>
 
             {/* Active filter chips */}
+            <DynamicFilterToggles
+              selectedKeys={appliedFilters.dynamicFilters || []}
+              onToggle={handleToggleDynamicFilter}
+            />
+
+            {/* Active filter chips */}
             {hasActiveFilters && (
               <div className="flex flex-wrap gap-1.5 sm:gap-2 px-1 text-xs sm:text-sm">
                 {appliedFilters.priority.length < 3 && (
@@ -847,6 +816,15 @@ export const News = () => {
                     Filter: Price
                     <button onClick={() => {
                       const nf = { ...appliedFilters, contentFilter: 'all' };
+                      setAppliedFilters(nf); setFilters(nf);
+                    }}><X className="w-3 h-3" /></button>
+                  </div>
+                )}
+                {(appliedFilters.dynamicFilters?.length ?? 0) > 0 && (
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                    Smart: {appliedFilters.dynamicFilters.join(', ')}
+                    <button onClick={() => {
+                      const nf = { ...appliedFilters, dynamicFilters: [] };
                       setAppliedFilters(nf); setFilters(nf);
                     }}><X className="w-3 h-3" /></button>
                   </div>

@@ -214,6 +214,27 @@ export const AlertDetailModal = ({
   const visibleSummary = hasLongSummary && !showFullSummary
     ? `${summaryText.slice(0, 220)}...`
     : summaryText;
+  const onchainAmountFormatted = safeToString(
+    alert.amountFormatted,
+    safeToString(alert.amount || mergedContent.amount, '—')
+  );
+  const onchainUsdFormatted = safeToString(
+    alert.usdFormatted,
+    formatCurrency(alert.usd_value ?? mergedContent.usd_value)
+  );
+  const onchainFromShort = safeToString(
+    alert.fromShort || alert.from_short,
+    shortenAddress(alert.from || mergedContent.from || mergedContent.from_address)
+  );
+  const onchainToShort = safeToString(
+    alert.toShort || alert.to_short,
+    shortenAddress(alert.to || mergedContent.to || mergedContent.to_address)
+  );
+  const onchainDirection = safeToString(alert.direction, `${onchainFromShort} → ${onchainToShort}`);
+  const priorityReasonText = safeToString(
+    alert.priorityReason || alert.alert_reason || mergedContent.alert_reason || mergedContent.alert_reasons,
+    ''
+  );
 
   return createPortal(
     <div
@@ -560,6 +581,15 @@ export const AlertDetailModal = ({
             <div className="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-emerald-500/5 border border-emerald-500/20 space-y-2 sm:space-y-3">
               <h3 className="text-xs sm:text-sm font-bold text-emerald-400">On-chain Activity</h3>
 
+              {safeToString(alert.priority, 'LOW') === 'HIGH' && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-2">
+                  <p className="text-red-300 text-xs font-semibold uppercase tracking-wide">High Priority Reason</p>
+                  <p className="text-red-200 text-xs mt-1">
+                    {priorityReasonText || 'Large value transfer detected and flagged for immediate review.'}
+                  </p>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-1.5 sm:gap-2 text-[10px] sm:text-xs">
                 <div>
                   <p className="text-slate-500">Token</p>
@@ -567,11 +597,11 @@ export const AlertDetailModal = ({
                 </div>
                 <div>
                   <p className="text-slate-500">Amount</p>
-                  <p className="text-slate-300 font-medium">{safeToString(alert.amount || mergedContent.amount, '—')}</p>
+                  <p className="text-slate-300 font-medium">{onchainAmountFormatted}</p>
                 </div>
                 <div>
                   <p className="text-slate-500">USD Value</p>
-                  <p className="text-slate-300 font-medium">{formatCurrency(alert.usd_value ?? mergedContent.usd_value)}</p>
+                  <p className="text-slate-300 font-medium">{onchainUsdFormatted}</p>
                 </div>
                 <div>
                   <p className="text-slate-500">Blockchain</p>
@@ -592,14 +622,25 @@ export const AlertDetailModal = ({
               <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2">
                 <p className="text-slate-500 text-xs mb-1">Transfer Path</p>
                 <p className="text-emerald-300 text-xs font-medium break-all">
-                  {shortenAddress(alert.from || mergedContent.from || mergedContent.from_address)} → {shortenAddress(alert.to || mergedContent.to || mergedContent.to_address)}
+                  {onchainDirection}
                 </p>
               </div>
 
-              {(alert.alert_reason || mergedContent.alert_reason || mergedContent.alert_reasons) && (
+              <div className="grid grid-cols-2 gap-1.5 sm:gap-2 text-[10px] sm:text-xs">
+                <div>
+                  <p className="text-slate-500">From</p>
+                  <p className="text-slate-300 font-medium break-all">{onchainFromShort}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">To</p>
+                  <p className="text-slate-300 font-medium break-all">{onchainToShort}</p>
+                </div>
+              </div>
+
+              {priorityReasonText && (
                 <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2">
                   <p className="text-slate-500 text-xs mb-1">Alert Reason</p>
-                  <p className="text-emerald-300 text-xs font-medium">{safeToString(alert.alert_reason || mergedContent.alert_reason || mergedContent.alert_reasons)}</p>
+                  <p className="text-emerald-300 text-xs font-medium">{priorityReasonText}</p>
                 </div>
               )}
             </div>
