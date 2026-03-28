@@ -51,7 +51,7 @@ const isEventItemId = (id) => String(id).startsWith('event-');
 const FALLBACK_SOURCE_OPTIONS = ['CoinDesk', 'CoinTelegraph', 'Decrypt', 'CoinGecko'];
 const SOURCE_QUERY_BY_LABEL = {
   CoinDesk: 'coindesk',
-  CoinTelegraph: 'cointelegraph.com',
+  CoinTelegraph: 'cointelegraph',
   Decrypt: 'decrypt.co',
   CoinGecko: 'coingecko',
 };
