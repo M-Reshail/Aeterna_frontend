@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import { Clock, Newspaper } from 'lucide-react';
-import { formatDateTime, formatRelativeTime } from '@utils/helpers';
+import { formatRelativeTime } from '@utils/helpers';
 
 const safeToString = (value, fallback = '') => {
   if (typeof value === 'string') return value.trim() || fallback;
@@ -46,13 +46,10 @@ export const NewsCard = ({ alert, onViewDetails }) => {
   const isLongSummary = compactSummary.length >= 120;
   const priority = safeToString(alert.priority, 'LOW');
   const styles = priorityStyles[priority] || priorityStyles.LOW;
-  const displayTime = publishedDate || alert.timestamp;
-  const relativeTime = formatRelativeTime(displayTime);
-  const exactTime = formatDateTime(displayTime);
 
   return (
     <article
-      className={`rounded-xl border bg-gradient-to-r from-slate-950 to-blue-950/20 p-2.5 sm:p-3 cursor-pointer transition-all duration-200 hover:bg-[#141b26] hover:border-slate-600/80 hover:shadow-[0_6px_18px_rgba(15,23,42,0.45)] ${styles.card}`}
+      className={`rounded-xl border bg-gradient-to-r from-slate-950 to-blue-950/20 p-2.5 sm:p-3 cursor-pointer transition-colors duration-200 ${styles.card}`}
       onClick={() => onViewDetails && onViewDetails(alert)}
     >
       <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -64,9 +61,9 @@ export const NewsCard = ({ alert, onViewDetails }) => {
             {source}
           </span>
         </div>
-        <span className="inline-flex items-center gap-1 text-[11px] text-slate-400" title={exactTime}>
+        <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
           <Clock className="w-3 h-3" />
-          {relativeTime}
+          {publishedDate ? formatRelativeTime(publishedDate) : formatRelativeTime(alert.timestamp)}
         </span>
       </div>
 

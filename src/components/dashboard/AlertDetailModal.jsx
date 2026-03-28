@@ -208,7 +208,6 @@ export const AlertDetailModal = ({
   const hashtagsList = asArray(alert.hashtags || mergedContent.hashtags);
   const mentionsList = asArray(alert.mentions || mergedContent.mentions);
   const qualityValue = toNumber(mergedContent.quality_score ?? alert.metrics?.quality_score);
-  const detailTime = detailType === 'news' && publishedDate ? publishedDate : alert.timestamp;
   const visibleSummary = hasLongSummary && !showFullSummary
     ? `${summaryText.slice(0, 220)}...`
     : summaryText;
@@ -295,12 +294,10 @@ export const AlertDetailModal = ({
             <div className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-white/[0.02] border border-white/[0.06]">
               <div className="flex items-center gap-1.5 sm:gap-2 mb-1">
                 <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-slate-500 flex-shrink-0" />
-                <span className="text-[9px] sm:text-[11px] text-slate-500 uppercase tracking-wider">
-                  {detailType === 'news' ? 'Published At' : 'Time'}
-                </span>
+                <span className="text-[9px] sm:text-[11px] text-slate-500 uppercase tracking-wider">Time</span>
               </div>
-              <p className="text-[11px] sm:text-xs font-medium text-slate-300">{formatDateTime(detailTime)}</p>
-              <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5">{formatRelativeTime(detailTime)}</p>
+              <p className="text-[11px] sm:text-xs font-medium text-slate-300">{formatDateTime(alert.timestamp)}</p>
+              <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5">{formatRelativeTime(alert.timestamp)}</p>
             </div>
 
             {/* Source */}
@@ -398,13 +395,10 @@ export const AlertDetailModal = ({
               </div>
 
               <div>
-                <p className="text-slate-500 text-[10px] sm:text-xs mb-1">Topics</p>
+                <p className="text-slate-500 text-[10px] sm:text-xs mb-1">Hashtags</p>
                 <div className="flex flex-wrap gap-1">
                   {hashtagsList.length > 0 ? hashtagsList.map((tag, idx) => (
-                    <span
-                      key={idx}
-                      className="inline-flex px-1.5 sm:px-2 py-0.5 rounded-md bg-blue-500/15 border border-blue-500/35 text-blue-300 text-[9px] sm:text-xs font-medium"
-                    >
+                    <span key={idx} className="text-blue-300 text-[9px] sm:text-xs">
                       {String(tag).startsWith('#') ? tag : `#${tag}`}
                     </span>
                   )) : (
@@ -414,13 +408,10 @@ export const AlertDetailModal = ({
               </div>
 
               <div>
-                <p className="text-slate-500 text-[10px] sm:text-xs mb-1">Assets/Entities</p>
+                <p className="text-slate-500 text-[10px] sm:text-xs mb-1">Mentions</p>
                 <div className="flex flex-wrap gap-1">
                   {mentionsList.length > 0 ? mentionsList.map((mention, idx) => (
-                    <span
-                      key={idx}
-                      className="inline-flex px-1.5 sm:px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 text-[9px] sm:text-xs font-medium"
-                    >
+                    <span key={idx} className="inline-flex px-1.5 sm:px-2 py-0.5 rounded-md bg-slate-500/20 text-slate-300 text-[9px] sm:text-xs font-medium">
                       {mention}
                     </span>
                   )) : (
