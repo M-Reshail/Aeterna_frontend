@@ -8,7 +8,7 @@ export const Header = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout, isAuthenticated } = useAuth();
-  const { status } = useSocket({ autoConnect: isAuthenticated });
+  const { status } = useSocket({ autoConnect: false });
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
