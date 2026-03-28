@@ -153,7 +153,6 @@ const normalizeLegacyStatus = (status) => {
 export const normalizeEvent = (event) => {
   const content = isPlainObject(event?.content) ? { ...event.content } : {};
   const type = normalizeType(event?.type);
-  const eventIdValue = toText(event?.id, 'unknown');
   const publishedDate = firstDefined(
     content.published_date,
     content.published_at,
@@ -229,7 +228,7 @@ export const normalizeEvent = (event) => {
 
   return {
     ...content,
-    id: `event-${type}-${eventIdValue}`,
+    id: `event-${event?.id}`,
     event_id: event?.id,
     type,
     event_type: type.toUpperCase(),
