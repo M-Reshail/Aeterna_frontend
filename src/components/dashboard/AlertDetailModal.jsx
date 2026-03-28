@@ -201,14 +201,16 @@ export const AlertDetailModal = ({
   const isUnread = alert.status === 'new';
   const detailType = resolveType(alert);
   const mergedContent = { ...(alert.rawContent || {}), ...(alert.metrics ? { metrics: alert.metrics } : {}) };
-  const summaryText = safeToString(alert.summary || alert.content, 'No summary available');
+  const summaryText = safeToString(alert.summary || alert.content, '');
   const hasLongSummary = summaryText.length > 220;
   const publishedDate = alert.published_date || mergedContent.published_date || mergedContent.published_at || mergedContent.publication_date || mergedContent.date_published;
   const categoriesList = asArray(alert.categories || mergedContent.categories);
   const hashtagsList = asArray(alert.hashtags || mergedContent.hashtags);
   const mentionsList = asArray(alert.mentions || mergedContent.mentions);
+  const authorText = safeToString(alert.author || mergedContent.author, '');
   const qualityValue = toNumber(mergedContent.quality_score ?? alert.metrics?.quality_score);
   const detailTime = detailType === 'news' && publishedDate ? publishedDate : alert.timestamp;
+  const hasSummary = summaryText.length > 0;
   const visibleSummary = hasLongSummary && !showFullSummary
     ? `${summaryText.slice(0, 220)}...`
     : summaryText;
@@ -276,18 +278,20 @@ export const AlertDetailModal = ({
           <h2 id="alert-detail-title" className="text-base sm:text-lg font-bold text-white leading-snug">{safeToString(alert.title)}</h2>
 
           {/* Full content */}
-          <div className="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-white/[0.03] border border-white/[0.07]">
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">{visibleSummary || 'No summary available'}</p>
-            {hasLongSummary && (
-              <button
-                type="button"
-                onClick={() => setShowFullSummary((prev) => !prev)}
-                className="mt-2 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
-              >
-                {showFullSummary ? 'Show Less' : 'Show More'}
-              </button>
-            )}
-          </div>
+          {hasSummary && (
+            <div className="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-white/[0.03] border border-white/[0.07]">
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">{visibleSummary}</p>
+              {hasLongSummary && (
+                <button
+                  type="button"
+                  onClick={() => setShowFullSummary((prev) => !prev)}
+                  className="mt-2 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+                >
+                  {showFullSummary ? 'Show Less' : 'Show More'}
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Metadata row */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
@@ -341,15 +345,17 @@ export const AlertDetailModal = ({
               <h3 className="text-xs sm:text-sm font-bold text-blue-400">News Details</h3>
               
               <div className="grid grid-cols-2 gap-1.5 sm:gap-2 text-[10px] sm:text-xs">
-                <div>
-                  <p className="text-slate-500">Author</p>
-                  <p
-                    className="text-slate-300 font-medium whitespace-normal break-words"
-                    title={safeToString(alert.author || mergedContent.author, 'Unknown')}
-                  >
-                    {safeToString(alert.author || mergedContent.author, 'Unknown')}
-                  </p>
-                </div>
+                {authorText && (
+                  <div>
+                    <p className="text-slate-500">Author</p>
+                    <p
+                      className="text-slate-300 font-medium whitespace-normal break-words"
+                      title={authorText}
+                    >
+                      {authorText}
+                    </p>
+                  </div>
+                )}
                 <div>
                   <p className="text-slate-500">Published Date</p>
                   <p className="text-slate-300 font-medium">{publishedDate ? formatDateTime(publishedDate) : 'Not provided'}</p>
@@ -384,18 +390,18 @@ export const AlertDetailModal = ({
                 </div>
               )}
 
-              <div>
-                <p className="text-slate-500 text-[10px] sm:text-xs mb-1">Categories</p>
-                <div className="flex flex-wrap gap-1">
-                  {categoriesList.length > 0 ? categoriesList.map((cat, idx) => (
-                    <span key={idx} className="inline-flex px-1.5 sm:px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-300 text-[9px] sm:text-xs font-medium">
-                      {cat}
-                    </span>
-                  )) : (
-                    <span className="inline-flex px-1.5 sm:px-2 py-0.5 rounded-md bg-slate-500/20 text-slate-300 text-[9px] sm:text-xs font-medium">None</span>
-                  )}
+              {categoriesList.length > 0 && (
+                <div>
+                  <p className="text-slate-500 text-[10px] sm:text-xs mb-1">Categories</p>
+                  <div className="flex flex-wrap gap-1">
+                    {categoriesList.map((cat, idx) => (
+                      <span key={idx} className="inline-flex px-1.5 sm:px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-300 text-[9px] sm:text-xs font-medium">
+                        {cat}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <p className="text-slate-500 text-[10px] sm:text-xs mb-1">Topics</p>

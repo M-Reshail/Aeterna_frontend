@@ -43,7 +43,7 @@ export const NewsCard = ({ alert, onViewDetails }) => {
     ? summary.replace(/\s+/g, ' ')
     : '';
   const hasSummary = compactSummary.length > 0;
-  const isLongSummary = compactSummary.length >= 120;
+  const isLongSummary = compactSummary.length > 120;
   const priority = safeToString(alert.priority, 'LOW');
   const styles = priorityStyles[priority] || priorityStyles.LOW;
   const displayTime = publishedDate || alert.timestamp;
