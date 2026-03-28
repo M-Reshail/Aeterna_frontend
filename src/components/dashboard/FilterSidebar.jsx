@@ -49,7 +49,7 @@ export const FilterSidebar = ({
   sourceOptions = [],
 }) => {
   const selectedSources = filters.sources || [];
-  const allSourcesSelected = selectedSources.length === 0;
+  const allSourcesSelected = sourceOptions.length === 0 || selectedSources.length === 0 || selectedSources.length === sourceOptions.length;
 
   const [openSections, setOpenSections] = useState({
     priority: true,

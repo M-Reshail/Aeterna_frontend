@@ -74,12 +74,7 @@ const normalizeSourceName = (source) => {
   return '';
 };
 
-const toApiSourceParam = (sourceLabel) => {
-  const mapped = SOURCE_QUERY_BY_LABEL[sourceLabel];
-  if (mapped) return mapped;
-  const raw = String(sourceLabel || '').trim().toLowerCase();
-  return raw || '';
-};
+const toApiSourceParam = (sourceLabel) => SOURCE_QUERY_BY_LABEL[sourceLabel] || '';
 
 // 
 // STAT CARD
@@ -213,7 +208,7 @@ const AlertSkeleton = () => (
 // 
 export const News = () => {
   const queryClient = useQueryClient();
-  const { on } = useSocket({ autoConnect: false });
+  const { on } = useSocket({ autoConnect: true });
   const { user } = useAuth();
   const toast = useToast();
   const [allAlerts, setAllAlerts]         = useState([]);
@@ -340,9 +335,7 @@ export const News = () => {
           )
         ).sort((a, b) => a.localeCompare(b));
 
-        setSourceOptions((prevSources) =>
-          Array.from(new Set([...(prevSources || []), ...mergedSources])).sort((a, b) => a.localeCompare(b))
-        );
+        setSourceOptions(mergedSources);
         return merged;
       });
 

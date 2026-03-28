@@ -73,12 +73,7 @@ const normalizeSourceName = (source) => {
   return '';
 };
 
-const toApiSourceParam = (sourceLabel) => {
-  const mapped = SOURCE_QUERY_BY_LABEL[sourceLabel];
-  if (mapped) return mapped;
-  const raw = String(sourceLabel || '').trim().toLowerCase();
-  return raw || '';
-};
+const toApiSourceParam = (sourceLabel) => SOURCE_QUERY_BY_LABEL[sourceLabel] || '';
 
 const PRICE_KEYWORDS = [
   'price',
@@ -184,7 +179,7 @@ const AlertSkeleton = () => (
 // ─────────────────────────────────────────────────────────────────────────────
 export const Dashboard = () => {
   const queryClient = useQueryClient();
-  const { on } = useSocket({ autoConnect: false });
+  const { on } = useSocket({ autoConnect: true });
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
@@ -314,9 +309,7 @@ export const Dashboard = () => {
           )
         ).sort((a, b) => a.localeCompare(b));
 
-        setSourceOptions((prevSources) =>
-          Array.from(new Set([...(prevSources || []), ...mergedSources])).sort((a, b) => a.localeCompare(b))
-        );
+        setSourceOptions(mergedSources);
         return merged;
       });
 
@@ -723,7 +716,7 @@ export const Dashboard = () => {
               </div>
             )}
           </div>
-
+eqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
           <div className="bg-gradient-to-br from-amber-500/5 to-amber-600/5 border border-amber-500/20 rounded-xl p-4 sm:p-5 hover:border-amber-500/40 transition-all">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
