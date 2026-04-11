@@ -83,7 +83,8 @@ const toHashtag = (value) => {
 };
 
 const logIngestionResponse = (response, context = '') => {
-  if (!import.meta.env.DEV) return;
+  const debugEnabled = import.meta.env.DEV && typeof window !== 'undefined' && window.__DEBUG_NEWS_FEED === true;
+  if (!debugEnabled) return;
   const items = Array.isArray(response) ? response : [];
   const first = items[0] || {};
   const firstContent = first?.content || {};
@@ -112,7 +113,8 @@ const logIngestionResponse = (response, context = '') => {
 };
 
 const logMappingDebug = (rawItems, mappedItems, context = '') => {
-  if (!import.meta.env.DEV) return;
+  const debugEnabled = import.meta.env.DEV && typeof window !== 'undefined' && window.__DEBUG_NEWS_FEED === true;
+  if (!debugEnabled) return;
 
   const raw = Array.isArray(rawItems) ? rawItems : [];
   const mapped = Array.isArray(mappedItems) ? mappedItems : [];
@@ -622,7 +624,16 @@ const normalizeSourceName = (source) => {
   return original;
 };
 
-const toApiSourceParam = (sourceLabel) => SOURCE_QUERY_BY_LABEL[sourceLabel] || '';
+const toApiSourceParam = (sourceLabel) => {
+  const mapped = SOURCE_QUERY_BY_LABEL[sourceLabel];
+  if (mapped) return mapped;
+
+  return String(sourceLabel || '')
+    .trim()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/$/, '');
+};
 
 // 
 // STAT CARD
@@ -782,6 +793,7 @@ export const News = () => {
   const toastRef = useRef(toast);
   const hasShownLoadErrorRef = useRef(false);
   const readAlertIdsRef = useRef(new Set());
+  const sourceOptionsRef = useRef(null);
 
   useEffect(() => {
     toastRef.current = toast;
@@ -798,13 +810,16 @@ export const News = () => {
         new Set(sourceList.map(toApiSourceParam).filter(Boolean))
       );
 
-      // ALWAYS load available sources first - independently from alerts
-      let apiSources = [];
-      try {
-        apiSources = await eventsService.getAvailableSources({ limit: 200 });
-      } catch (error) {
-        console.warn('Could not load available sources:', error.message);
-        // Continue even if sources fail - use fallback
+      // Load and cache available sources once to avoid repeated expensive calls per filter update.
+      let apiSources = sourceOptionsRef.current;
+      if (!Array.isArray(apiSources) || apiSources.length === 0) {
+        try {
+          apiSources = await eventsService.getAvailableSources({ limit: 100 });
+          sourceOptionsRef.current = apiSources;
+        } catch (error) {
+          console.warn('Could not load available sources:', error.message);
+          apiSources = [];
+        }
       }
 
       // Determine which API endpoint to call for alerts
@@ -813,33 +828,33 @@ export const News = () => {
 
       try {
         if (sourceApiParams.length > 0) {
-          // If sources selected: fetch from those sources with optional type filter
           const type = eventType === 'PRICE_ALERT'
             ? 'price'
             : (eventType === 'NEWS'
               ? 'news'
               : (eventType === 'ONCHAIN' ? 'onchain' : undefined));
+
           const results = await Promise.all(
             sourceApiParams.map((source) =>
-              eventsService.getEvents({ skip: 0, limit: 100, source, type })
+              eventsService.getEvents({ skip: 0, limit: 50, source, type })
             )
           );
           feedResult = results.flat().filter(Boolean);
         } else if (eventType === 'NEWS') {
           // If only news filter selected (no sources): fetch all news
-          feedResult = await eventsService.getEventsByType('news', { skip: 0, limit: 100 });
+          feedResult = await eventsService.getEventsByType('news', { skip: 0, limit: 50 });
           if (!Array.isArray(feedResult)) feedResult = [];
         } else if (eventType === 'PRICE_ALERT') {
           // If only price filter selected (no sources): fetch all price events
-          feedResult = await eventsService.getEventsByType('price', { skip: 0, limit: 100 });
+          feedResult = await eventsService.getEventsByType('price', { skip: 0, limit: 50 });
           if (!Array.isArray(feedResult)) feedResult = [];
         } else if (eventType === 'ONCHAIN') {
           // If only onchain filter selected (no sources): fetch all onchain events
-          feedResult = await eventsService.getEventsByType('onchain', { skip: 0, limit: 100 });
+          feedResult = await eventsService.getEventsByType('onchain', { skip: 0, limit: 50 });
           if (!Array.isArray(feedResult)) feedResult = [];
         } else {
-          // If no filter selected: fetch alerts
-          feedResult = await alertsService.getAlerts({ skip: 0, limit: 50 });
+          // Default view should include mixed event types for "all" filters.
+          feedResult = await eventsService.getEvents({ skip: 0, limit: 120 });
           if (!Array.isArray(feedResult)) feedResult = [];
         }
       } catch (error) {
@@ -850,7 +865,7 @@ export const News = () => {
       }
 
       // raw API -> normalizeEvent -> filter -> render
-      const isEventsFeed = sourceApiParams.length > 0 || eventType !== 'all';
+      const isEventsFeed = true;
       logIngestionResponse(
         feedResult,
         `(items: ${Array.isArray(feedResult) ? feedResult.length : 0}, sourceKind: ${isEventsFeed ? 'events' : 'alerts'})`
@@ -881,6 +896,7 @@ export const News = () => {
             [
               ...(apiSources || []),
               ...sourcesFromAlerts,
+              ...sourceList,
               ...FALLBACK_SOURCE_OPTIONS,
             ].map(normalizeSourceName).filter(Boolean)
           )
