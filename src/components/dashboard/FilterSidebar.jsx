@@ -68,7 +68,7 @@ export const FilterSidebar = ({
   };
 
   const activeFilterCount =
-    (filters.priority?.length !== 3 ? 1 : 0) +
+    ((filters.priority?.length ?? 0) > 0 && (filters.priority?.length ?? 0) !== 3 ? 1 : 0) +
     (filters.eventType && filters.eventType !== 'all' ? 1 : 0) +
     (filters.dateFrom ? 1 : 0) +
     (filters.dateTo ? 1 : 0) +

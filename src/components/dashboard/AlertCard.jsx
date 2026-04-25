@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import {
   TrendingUp,
@@ -15,6 +15,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { formatRelativeTime } from '@utils/helpers';
+import { getAuthorDisplay, getSummaryOrFallback } from '@utils/contentText';
 
 // Safe converter: safely handle objects/strings in render
 const safeToString = (value, fallback = '') => {
@@ -40,43 +41,26 @@ const compactAddress = (value) => {
   return `${text.slice(0, 6)}...${text.slice(-4)}`;
 };
 
-const cleanPreview = (value) => {
-  const text = safeToString(value, '')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  if (!text) return '';
-  if (text.length <= 220) return text;
-
-  const cut = text.slice(0, 220);
-  const lastPunctuation = Math.max(cut.lastIndexOf('.'), cut.lastIndexOf('!'), cut.lastIndexOf('?'));
-  if (lastPunctuation > 80) return cut.slice(0, lastPunctuation + 1);
-
-  const lastSpace = cut.lastIndexOf(' ');
-  return `${cut.slice(0, lastSpace > 80 ? lastSpace : 220)}...`;
+const formatUsdValue = (value) => {
+  if (value === null || value === undefined || value === '') return '';
+  const numeric = Number(String(value).replace(/,/g, '').trim());
+  if (!Number.isFinite(numeric) || numeric <= 0) return '';
+  const dollars = `$${numeric.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  return `${dollars} USD`;
 };
 
+const isNonNull = (value) => value !== null && value !== undefined && String(value).trim() !== '';
+
 const summarizeForFeed = (summary) => {
-  if (typeof summary !== 'string') {
-    return { text: '', show: false, truncated: false };
-  }
+  const resolved = getSummaryOrFallback(typeof summary === 'string' ? summary : '');
+  if (!resolved) return { text: '', show: false, truncated: false };
 
-  const cleaned = summary
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  if (!cleaned) {
-    return { text: '', show: false, truncated: false };
-  }
-
-  if (cleaned.length <= 120) {
-    return { text: cleaned, show: true, truncated: false };
+  if (resolved.length <= 120) {
+    return { text: resolved, show: true, truncated: false };
   }
 
   return {
-    text: `${cleaned.slice(0, 120).trimEnd()}...`,
+    text: `${resolved.slice(0, 120).trimEnd()}...`,
     show: true,
     truncated: true,
   };
@@ -139,7 +123,7 @@ export const AlertCard = ({ alert, onViewDetails, onMarkAsRead }) => {
   const sourceColor = SOURCE_COLORS[alert.source] || SOURCE_COLORS.DEFAULT;
   const isUnread = alert.status === 'new';
 
-  const author = safeToString(alert.author || alert?.rawContent?.author, 'Unknown author');
+  const author = getAuthorDisplay(alert.author || alert?.rawContent?.author, { mode: 'unknown' });
   const articleLink = safeToString(alert.link || alert?.rawContent?.link, '');
   const categories = asArray(alert.categories?.length ? alert.categories : alert?.rawContent?.categories)
     .map((item) => safeToString(item, '').trim())
@@ -153,46 +137,98 @@ export const AlertCard = ({ alert, onViewDetails, onMarkAsRead }) => {
     .map((item) => safeToString(item, '').trim())
     .filter(Boolean)
     .slice(0, 4);
-  const fromAddress = alert.fromAddress || alert?.rawContent?.from_address || alert?.rawContent?.from || '';
-  const toAddress = alert.toAddress || alert?.rawContent?.to_address || alert?.rawContent?.to || '';
-  const token = safeToString(alert.token || alert.entity || alert?.metadata?.token, '');
+  const onchainRaw = (alert?.rawContent && typeof alert.rawContent === 'object') ? alert.rawContent : {};
+  const fromAddress = alert.fromAddress || onchainRaw?.from_address || onchainRaw?.from || '';
+  const toAddress = alert.toAddress || onchainRaw?.to_address || onchainRaw?.to || '';
+  const exchangeFrom = onchainRaw?.exchange_from;
+  const exchangeTo = onchainRaw?.exchange_to;
+  const exchangeDetected = safeToString(onchainRaw?.exchange_detected, '');
   const amount = safeToString(alert.amountDisplay || alert?.metadata?.amount, '');
   const cardType = safeToString(alert.type, 'news').toLowerCase();
   const isNews = cardType === 'news';
   const isPrice = cardType === 'price';
   const isOnchain = cardType === 'onchain';
-  const structuredSubtitle = safeToString(alert.subtitle, '') || [
-    fromAddress && toAddress ? `${compactAddress(fromAddress)} -> ${compactAddress(toAddress)}` : '',
-    token,
-  ].filter(Boolean).join(' | ');
-  const summaryPreview = summarizeForFeed(alert.summary);
-  const displayTitle = safeToString(alert.title, 'Feed update');
-  const priceValue = safeToString(
-    alert?.rawContent?.current_price,
-    safeToString(alert?.rawContent?.price, safeToString(alert?.rawContent?.price_usd, ''))
+  const token = safeToString(
+    alert.token ||
+    alert.entity ||
+    (isOnchain ? (onchainRaw?.token || onchainRaw?.symbol) : '') ||
+    alert?.metadata?.token,
+    ''
   );
-  const priceChange = safeToString(
-    alert?.rawContent?.price_change_24h_pct,
-    safeToString(
-      alert?.rawContent?.change_24h_pct,
-      safeToString(
-        alert?.rawContent?.price_change_1h_pct,
-        safeToString(alert?.rawContent?.change_1h_pct, '')
-      )
-    )
+
+  const onchainParties = useMemo(() => {
+    const hasAddresses = Boolean(safeToString(fromAddress, '').trim()) && Boolean(safeToString(toAddress, '').trim());
+    if (!hasAddresses) return null;
+
+    const fromIsExchange = isNonNull(exchangeFrom);
+    const toIsExchange = isNonNull(exchangeTo);
+    const fromLabel = fromIsExchange ? safeToString(exchangeFrom, 'Exchange') : compactAddress(fromAddress);
+    const toLabel = toIsExchange ? safeToString(exchangeTo, 'Exchange') : compactAddress(toAddress);
+
+    return {
+      from: {
+        isExchange: fromIsExchange,
+        label: fromLabel,
+        fullAddress: fromIsExchange ? '' : safeToString(fromAddress, ''),
+        shortAddress: fromIsExchange ? '' : compactAddress(fromAddress),
+      },
+      to: {
+        isExchange: toIsExchange,
+        label: toLabel,
+        fullAddress: toIsExchange ? '' : safeToString(toAddress, ''),
+        shortAddress: toIsExchange ? '' : compactAddress(toAddress),
+      },
+    };
+  }, [exchangeFrom, exchangeTo, fromAddress, toAddress]);
+
+  const structuredSubtitle = (isOnchain ? '' : safeToString(alert.subtitle, '')) || (
+    onchainParties ? `${onchainParties.from.label} → ${onchainParties.to.label}` : ''
   );
-  const onchainDirection = [compactAddress(fromAddress), compactAddress(toAddress)].filter(Boolean).join(' -> ');
-  const onchainUsdValue = safeToString(alert.usdFormatted || alert.amountDisplay || alert.amountUsd, '');
-  const onchainRisk = safeToString(alert.riskSignal || '', 'neutral');
+
+  const summaryPreview = summarizeForFeed(alert?.rawContent?.summary);
+  const displayTitle = (() => {
+    const title = safeToString(alert.title, '').trim();
+    if (title) return title;
+    if (isPrice) {
+      const name = safeToString(alert?.rawContent?.name, '').trim();
+      const symbol = safeToString(alert?.rawContent?.symbol, '').trim();
+      return name || symbol || 'Unknown Asset';
+    }
+    return 'Feed update';
+  })();
+  // Format current_price as a readable dollar string
+  const rawPrice = alert?.rawContent?.current_price ?? alert?.rawContent?.price ?? alert?.rawContent?.price_usd;
+  const priceValue = (rawPrice != null && Number.isFinite(Number(rawPrice)))
+    ? `$${Number(rawPrice) < 1 ? Number(rawPrice).toFixed(4) : Number(rawPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '';
+
+  // Format % change: prefer 24h, fallback to 1h
+  const rawChange =
+    alert?.rawContent?.price_change_24h_pct ??
+    alert?.rawContent?.change_24h_pct ??
+    alert?.rawContent?.price_change_1h_pct ??
+    alert?.rawContent?.change_1h_pct;
+  const priceChange = (rawChange != null && Number.isFinite(Number(rawChange)))
+    ? `${Number(rawChange) >= 0 ? '+' : ''}${Number(rawChange).toFixed(2)}%`
+    : '';
+  const onchainUsdValue = formatUsdValue(
+    onchainRaw?.usd_value ??
+    onchainRaw?.value_usd ??
+    onchainRaw?.amount_usd ??
+    onchainRaw?.usd_amount ??
+    alert?.amountUsd ??
+    alert?.rawContent?.signal?.amountUsd
+  );
+  const onchainRisk = safeToString(alert.riskSignal || alert?.rawContent?.onchainFormatted?.riskSignal || '', 'neutral');
 
   return (
     <div
       className={`
-        group relative flex flex-col sm:flex-row gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-lg sm:rounded-xl
+        group relative ${isPrice ? 'flex items-center gap-2 px-4 py-2.5 min-h-[52px] max-h-14' : 'flex flex-col sm:flex-row gap-2 sm:gap-3 p-2.5 sm:p-3'} rounded-lg sm:rounded-xl
         bg-[#0D0D0D] border border-[#1F1F1F]
         border-l-2 ${priority.cardBorder}
         transition-all duration-300 cursor-pointer
-        hover:bg-[#141414] hover:border-[#2A2A2A] hover:shadow-xl ${priority.glow}
+        hover:bg-[#151515] hover:border-[#2A2A2A] hover:shadow-xl ${priority.glow}
         active:scale-95 sm:active:scale-100
         ${isUnread ? 'ring-1 ring-inset ring-white/5' : 'opacity-80 hover:opacity-100'}
       `}
@@ -216,7 +252,39 @@ export const AlertCard = ({ alert, onViewDetails, onMarkAsRead }) => {
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-w-0">
+      <div className={`flex-1 min-w-0 ${isPrice ? 'flex items-center gap-2 overflow-hidden' : ''}`}>
+        {isPrice ? (
+          <>
+            <div className="min-w-0 flex items-center gap-2">
+              <h4 className={`min-w-0 truncate text-sm font-semibold ${isUnread ? 'text-white' : 'text-slate-200'}`}>
+                {displayTitle}
+              </h4>
+              {token && (
+                <span className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-blue-500/10 text-blue-300 border border-blue-500/20 shrink-0">
+                  {token}
+                </span>
+              )}
+            </div>
+
+            <div className="ml-auto flex items-center gap-2 shrink-0">
+              {(priceValue || amount) && (
+                <span className="text-sm font-medium text-slate-100">
+                  {priceValue || amount}
+                </span>
+              )}
+              {priceChange && (
+                <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold border ${priceChange.startsWith('+') ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' : 'bg-red-500/10 text-red-300 border-red-500/20'}`}>
+                  {priceChange}
+                </span>
+              )}
+              <span className="flex items-center gap-1 text-[10px] text-slate-500/80 whitespace-nowrap">
+                <Clock className="w-3 h-3" />
+                {formatRelativeTime(alert.timestamp)}
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
         {/* Top row: badges + timestamp */}
         <div className="flex items-center flex-wrap gap-1 sm:gap-2 mb-1 text-[10px] sm:text-xs">
           {/* Priority badge */}
@@ -236,7 +304,7 @@ export const AlertCard = ({ alert, onViewDetails, onMarkAsRead }) => {
 
           {/* Event type tag */}
           <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium text-slate-400 bg-slate-500/10 border border-slate-500/20">
-            {(alert.event_type || 'ALERT').replace(/_/g, ' ')}
+            {(alert.type || alert.event_type || 'ALERT').toUpperCase().replace(/_ALERT$/, '').replace(/_/g, ' ')}
           </span>
 
           {/* Timestamp */}
@@ -246,34 +314,61 @@ export const AlertCard = ({ alert, onViewDetails, onMarkAsRead }) => {
           </span>
         </div>
 
-        {/* Title */}
-        <h4
-          className={`text-xs sm:text-sm font-semibold mb-0.5 line-clamp-2 ${
-            isUnread ? 'text-white' : 'text-slate-300'
-          }`}
-        >
-          {displayTitle}
-        </h4>
-
-        {isOnchain && structuredSubtitle && (
-          <p className="text-[10px] sm:text-[11px] text-cyan-300/90 mb-1 line-clamp-1">
-            {structuredSubtitle}
-          </p>
-        )}
-
-        {isOnchain && (amount || token) && (
-          <div className="flex flex-wrap items-center gap-1 mb-1">
-            {amount && (
-              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                {amount}
+        {/* Title + onchain details in a single row */}
+        {isOnchain ? (
+          <div className="flex items-center gap-1.5 min-w-0 text-[11px] sm:text-xs mb-0.5">
+            <h4 className={`min-w-0 truncate font-medium ${isUnread ? 'text-slate-100' : 'text-slate-300'}`}>
+              {displayTitle}
+            </h4>
+            {structuredSubtitle && (
+              <span className="min-w-0 truncate text-cyan-300/90">
+                {structuredSubtitle}
               </span>
             )}
             {token && (
-              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-blue-500/10 text-blue-300 border border-blue-500/20">
+              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-blue-500/10 text-blue-300 border border-blue-500/20 shrink-0">
                 {token}
               </span>
             )}
+            {(onchainUsdValue || amount) && (
+              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">
+                {onchainUsdValue || amount}
+              </span>
+            )}
           </div>
+        ) : isPrice ? (
+          <div className="flex items-center gap-1.5 min-w-0 text-[11px] sm:text-xs mb-0.5 whitespace-nowrap overflow-hidden">
+            <h4 className={`min-w-0 truncate font-medium ${isUnread ? 'text-slate-100' : 'text-slate-300'}`}>
+              {displayTitle}
+            </h4>
+            {token && (
+              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-blue-500/10 text-blue-300 border border-blue-500/20 shrink-0">
+                {token}
+              </span>
+            )}
+            {priceValue && (
+              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-white/5 text-slate-200 border border-white/10 shrink-0">
+                {priceValue}
+              </span>
+            )}
+            {priceChange && (
+              <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold border shrink-0 ${priceChange.startsWith('+') ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' : 'bg-red-500/10 text-red-300 border-red-500/20'}`}>
+                {priceChange}
+              </span>
+            )}
+            {!priceValue && amount && (
+              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-white/5 text-slate-200 border border-white/10 shrink-0">
+                {amount}
+              </span>
+            )}
+          </div>
+        ) : (
+          <h4
+            className={`text-xs sm:text-sm font-semibold mb-0.5 line-clamp-2 ${isUnread ? 'text-white' : 'text-slate-300'
+              }`}
+          >
+            {displayTitle}
+          </h4>
         )}
 
         {/* News layout */}
@@ -286,77 +381,40 @@ export const AlertCard = ({ alert, onViewDetails, onMarkAsRead }) => {
           </p>
         )}
 
-        {/* Price layout */}
-        {isPrice && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            {token && (
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-500/10 text-blue-300 border border-blue-500/20">
-                {token}
-              </span>
-            )}
-            {priceValue && (
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-white/5 text-slate-200 border border-white/10">
-                ${priceValue}
-              </span>
-            )}
-            {priceChange && (
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/20">
-                {priceChange}%
-              </span>
-            )}
-            {!priceValue && amount && (
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-white/5 text-slate-200 border border-white/10">
-                {amount}
-              </span>
-            )}
-          </div>
-        )}
-
         {/* Onchain layout */}
         {isOnchain && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
-            {onchainDirection && (
-              <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-                {onchainDirection}
-              </span>
+          <div className="mt-1.5 space-y-1 text-[11px]">
+            {onchainRisk && (
+              <div className="inline-flex items-center">
+                <span className="px-2 py-0.5 rounded-md bg-rose-500/10 text-rose-300 border border-rose-500/20 uppercase text-[10px]">
+                  {onchainRisk}
+                </span>
+              </div>
             )}
-            {token && (
-              <span className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-300 border border-blue-500/20 font-semibold">
-                {token}
-              </span>
-            )}
-            {onchainUsdValue && (
-              <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-semibold">
-                {onchainUsdValue}
-              </span>
-            )}
-            <span className="px-2 py-0.5 rounded-md bg-rose-500/10 text-rose-300 border border-rose-500/20 uppercase">
-              {onchainRisk}
-            </span>
           </div>
         )}
 
         {/* Author + article link */}
         {isNews && (
           <div className="hidden xl:flex mt-1.5 flex-wrap items-center gap-2 text-[10px] sm:text-[11px] text-slate-500">
-          <span
-            title={author}
-            className="max-w-[220px] whitespace-nowrap overflow-hidden text-ellipsis"
-          >
-            By {author}
-          </span>
-          {articleLink && (
-            <a
-              href={articleLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="inline-flex items-center gap-1 text-blue-300 hover:text-blue-200 transition-colors"
+            <span
+              title={author}
+              className="max-w-[220px] whitespace-nowrap overflow-hidden text-ellipsis"
             >
-              <ExternalLink className="w-3 h-3" />
-              Read more
-            </a>
-          )}
+              By {author}
+            </span>
+            {articleLink && (
+              <a
+                href={articleLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 text-blue-300 hover:text-blue-200 transition-colors"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Read more
+              </a>
+            )}
           </div>
         )}
 
@@ -409,37 +467,41 @@ export const AlertCard = ({ alert, onViewDetails, onMarkAsRead }) => {
             <span className="text-[9px] sm:text-[10px] font-bold text-emerald-400">{alert.entity}</span>
           </div>
         )}
+          </>
+        )}
       </div>
 
       {/* Action buttons - appear on hover (desktop) or below on mobile */}
-      <div
-        className="
-          flex flex-row sm:flex-col gap-1.5 justify-end sm:justify-center flex-shrink-0
-          opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200
-        "
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={() => onViewDetails && onViewDetails(alert)}
-          className="flex items-center gap-0.5 sm:gap-1 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-medium
-            bg-emerald-500/10 text-emerald-400 border border-emerald-500/30
-            hover:bg-emerald-500/20 active:scale-95 transition-all duration-200 whitespace-nowrap"
+      {!isPrice && (
+        <div
+          className="
+            flex flex-row sm:flex-col gap-1.5 justify-end sm:justify-center flex-shrink-0
+            opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200
+          "
+          onClick={(e) => e.stopPropagation()}
         >
-          <Eye className="w-3 h-3" />
-          <span className="hidden sm:inline">Details</span>
-        </button>
-        {isUnread && (
           <button
-            onClick={() => onMarkAsRead && onMarkAsRead(alert.id)}
+            onClick={() => onViewDetails && onViewDetails(alert)}
             className="flex items-center gap-0.5 sm:gap-1 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-medium
-              bg-slate-500/10 text-slate-400 border border-slate-500/20
-              hover:bg-slate-500/20 active:scale-95 transition-all duration-200 whitespace-nowrap"
+              bg-emerald-500/10 text-emerald-400 border border-emerald-500/30
+              hover:bg-emerald-500/20 active:scale-95 transition-all duration-200 whitespace-nowrap"
           >
-            <CheckCircle className="w-3 h-3" />
-            <span className="hidden sm:inline">Read</span>
+            <Eye className="w-3 h-3" />
+            <span className="hidden sm:inline">Details</span>
           </button>
-        )}
-      </div>
+          {isUnread && (
+            <button
+              onClick={() => onMarkAsRead && onMarkAsRead(alert.id)}
+              className="flex items-center gap-0.5 sm:gap-1 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-medium
+                bg-slate-500/10 text-slate-400 border border-slate-500/20
+                hover:bg-slate-500/20 active:scale-95 transition-all duration-200 whitespace-nowrap"
+            >
+              <CheckCircle className="w-3 h-3" />
+              <span className="hidden sm:inline">Read</span>
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 };

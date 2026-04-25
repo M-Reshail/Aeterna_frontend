@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
 import {
@@ -22,6 +22,42 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import { formatDateTime, formatRelativeTime } from '@utils/helpers';
+import { getAuthorDisplay, getSummaryOrFallback } from '@utils/contentText';
+
+const compactAddress = (value = '') => {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (!text.startsWith('0x') || text.length <= 14) return text;
+  return `${text.slice(0, 6)}...${text.slice(-4)}`;
+};
+
+const formatCompactNumber = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '';
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '-' : '';
+  if (abs >= 1e12) return `${sign}${(abs / 1e12).toFixed(1)}T`;
+  if (abs >= 1e9) return `${sign}${(abs / 1e9).toFixed(1)}B`;
+  if (abs >= 1e6) return `${sign}${(abs / 1e6).toFixed(1)}M`;
+  if (abs >= 1e3) return `${sign}${(abs / 1e3).toFixed(1)}K`;
+  return `${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+};
+
+const formatCompactUsd = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '';
+  return `$${formatCompactNumber(n)}`;
+};
+
+const formatUsdValue = (value) => {
+  if (value === null || value === undefined || value === '') return '';
+  const numeric = Number(String(value).replace(/,/g, '').trim());
+  if (!Number.isFinite(numeric) || numeric <= 0) return '';
+  const dollars = `$${numeric.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  return `${dollars} USD`;
+};
+
+const isNonNull = (value) => value !== null && value !== undefined && String(value).trim() !== '';
 
 const PRIORITY_CONFIG = {
   HIGH: {
@@ -72,31 +108,10 @@ const safeToString = (value, fallback = '—') => {
   return fallback;
 };
 
-const resolveNewsSummary = (alert) => {
-  const isPlaceholder = (value) => {
-    const text = String(value || '').trim().toLowerCase();
-    return !text || text === 'no summary available' || text === 'no details provided';
-  };
-
+const resolveBackendSummary = (alert) => {
   const raw = alert?.rawContent || {};
-  const candidates = [
-    raw?.full_summary,
-    raw?.summary,
-    raw?.description,
-    raw?.details?.summary,
-    raw?.details?.full_summary,
-    raw?.details?.description,
-    raw?.normalizedFeed?.summary,
-    alert?.summary,
-    alert?.content,
-  ];
-
-  for (const candidate of candidates) {
-    const text = safeToString(candidate, '');
-    if (!isPlaceholder(text)) return text;
-  }
-
-  return '';
+  const summary = raw?.summary;
+  return typeof summary === 'string' ? summary : '';
 };
 
 export const AlertDetailModal = ({
@@ -113,16 +128,15 @@ export const AlertDetailModal = ({
   const dialogRef = useRef(null);
   const closeButtonRef = useRef(null);
   const detailTimestamp = alert?.detailTimestamp || alert?.rawContent?.published || alert?.timestamp;
-  const detailTitle = safeToString(alert?.rawContent?.title ?? alert?.title, 'Untitled');
-  const newsSummary = resolveNewsSummary(alert);
+  const detailTitle = safeToString(alert?.rawContent?.title ?? alert?.title, '');
+  const backendSummary = resolveBackendSummary(alert);
+  const displaySummary = getSummaryOrFallback(backendSummary);
   const isNewsItem = alert?.rawContent?.type === 'news';
-  const detailContent = isNewsItem
-    ? (newsSummary || 'No summary available')
-    : (newsSummary || 'No summary available');
+  const detailContent = isNewsItem ? displaySummary : displaySummary;
 
   useEffect(() => {
     if (!isOpen || !alert) return;
-    const feedTitle = safeToString(alert?.title, 'Untitled');
+    const feedTitle = safeToString(alert?.title, '');
     if (feedTitle !== detailTitle) {
       console.warn('[AlertDetailModal] feed/detail title mismatch', {
         id: alert?.alert_id ?? alert?.id,
@@ -136,11 +150,15 @@ export const AlertDetailModal = ({
   const [localSentiment, setLocalSentiment] = useState(null);
   const [localComment, setLocalComment] = useState('');
   const [showComment, setShowComment] = useState(false);
+  const [showFullFrom, setShowFullFrom] = useState(false);
+  const [showFullTo, setShowFullTo] = useState(false);
 
   useEffect(() => {
     setLocalSentiment(null);
     setLocalComment('');
     setShowComment(false);
+    setShowFullFrom(false);
+    setShowFullTo(false);
   }, [alert?.alert_id ?? alert?.id]);
 
   const handleSubmitFeedback = useCallback(() => {
@@ -182,11 +200,58 @@ export const AlertDetailModal = ({
     };
   }, [isOpen, onClose]);
 
+  // IMPORTANT: hooks must be called consistently across open/closed renders
+  const raw = (alert?.rawContent && typeof alert.rawContent === 'object') ? alert.rawContent : {};
+  const isOnchain = String(alert?.type || raw?.type || '').toLowerCase() === 'onchain';
+  const onchainFrom = safeToString(alert?.fromAddress || raw?.from_address || raw?.from || '', '');
+  const onchainTo = safeToString(alert?.toAddress || raw?.to_address || raw?.to || '', '');
+  const exchangeFrom = raw?.exchange_from;
+  const exchangeTo = raw?.exchange_to;
+  const exchangeDetected = safeToString(raw?.exchange_detected, '');
+  const onchainToken = safeToString(alert?.token || alert?.entity || raw?.token || raw?.symbol || '', '');
+  const onchainUsdValue = formatUsdValue(
+    raw?.usd_value ??
+    raw?.value_usd ??
+    raw?.amount_usd ??
+    raw?.usd_amount ??
+    alert?.amountUsd ??
+    raw?.signal?.amountUsd
+  );
+
+  const onchainParties = useMemo(() => {
+    const hasAddresses = Boolean(onchainFrom.trim()) && Boolean(onchainTo.trim());
+    if (!hasAddresses) return null;
+
+    const fromIsExchange = isNonNull(exchangeFrom);
+    const toIsExchange = isNonNull(exchangeTo);
+    const fromLabel = fromIsExchange ? safeToString(exchangeFrom, 'Exchange') : (showFullFrom ? onchainFrom : compactAddress(onchainFrom));
+    const toLabel = toIsExchange ? safeToString(exchangeTo, 'Exchange') : (showFullTo ? onchainTo : compactAddress(onchainTo));
+
+    return {
+      from: { isExchange: fromIsExchange, label: fromLabel, full: fromIsExchange ? '' : onchainFrom, short: fromIsExchange ? '' : compactAddress(onchainFrom) },
+      to: { isExchange: toIsExchange, label: toLabel, full: toIsExchange ? '' : onchainTo, short: toIsExchange ? '' : compactAddress(onchainTo) },
+    };
+  }, [exchangeFrom, exchangeTo, onchainFrom, onchainTo, showFullFrom, showFullTo]);
+
   if (!isOpen || !alert) return null;
 
   const priority = PRIORITY_CONFIG[alert.priority] || PRIORITY_CONFIG.LOW;
   const IconComponent = EVENT_ICONS[alert.event_type] || EVENT_ICONS.DEFAULT;
   const isUnread = alert.status === 'new';
+  const computedTitle = (() => {
+    const rawTitle = safeToString(alert?.rawContent?.title ?? alert?.title, '').trim();
+    if (rawTitle) return rawTitle;
+
+    const rawType = String(alert?.rawContent?.type || alert?.type || '').toLowerCase();
+    if (rawType === 'price') {
+      const name = safeToString(alert?.rawContent?.name, '').trim();
+      const symbol = safeToString(alert?.rawContent?.symbol, '').trim();
+      return name || symbol || 'Unknown Asset';
+    }
+
+    return safeToString(alert?.rawContent?.name ?? alert?.rawContent?.symbol, '').trim() || 'Feed update';
+  })();
+
   const newsImageUrl = safeToString(alert?.rawContent?.image_url || alert?.image_url, '');
   const priceChange1h = Number.isFinite(Number(alert?.rawContent?.price_change_1h_pct))
     ? Number(alert.rawContent.price_change_1h_pct)
@@ -258,7 +323,7 @@ export const AlertDetailModal = ({
         {/* Body */}
         <div className="p-4 sm:p-6 space-y-3 sm:space-y-5">
           {/* Title */}
-          <h2 id="alert-detail-title" className="text-base sm:text-lg font-bold text-white leading-snug">{detailTitle}</h2>
+          <h2 id="alert-detail-title" className="text-base sm:text-lg font-bold text-white leading-snug">{computedTitle}</h2>
 
           {/* Full content */}
           <div className="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-white/[0.03] border border-white/[0.07]">
@@ -318,7 +383,7 @@ export const AlertDetailModal = ({
                 <div className="p-2.5 sm:p-3 rounded-lg bg-white/[0.03] border border-white/[0.07]">
                   <p className="text-[10px] sm:text-xs text-slate-500 mb-1">Summary</p>
                   <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                    {newsSummary || 'No summary available'}
+                    {detailContent}
                   </p>
                 </div>
               )}
@@ -333,12 +398,14 @@ export const AlertDetailModal = ({
                   />
                 </div>
               )}
-              
+
               <div className="grid grid-cols-2 gap-1.5 sm:gap-2 text-[10px] sm:text-xs">
-                {alert.rawContent.author && (
+                {getAuthorDisplay(alert.rawContent.author, { mode: 'hide' }) && (
                   <div>
                     <p className="text-slate-500">Author</p>
-                    <p className="text-slate-300 font-medium truncate">{alert.rawContent.author}</p>
+                    <p className="text-slate-300 font-medium truncate">
+                      {getAuthorDisplay(alert.rawContent.author, { mode: 'hide' })}
+                    </p>
                   </div>
                 )}
                 {alert.rawContent.word_count && (
@@ -420,6 +487,66 @@ export const AlertDetailModal = ({
             </div>
           )}
 
+          {/* ONCHAIN DETAILS SECTION */}
+          {isOnchain && (
+            <div className="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-cyan-500/5 border border-cyan-500/20 space-y-2 sm:space-y-3">
+              <h3 className="text-xs sm:text-sm font-bold text-cyan-300">⛓️ Onchain Transaction</h3>
+
+              {onchainParties && (
+                <div className="p-2.5 sm:p-3 rounded-lg bg-white/[0.03] border border-white/[0.07]">
+                  <p className="text-[10px] sm:text-xs text-slate-500 mb-1">Flow</p>
+                  <div className="flex items-center flex-wrap gap-2 text-xs sm:text-sm text-slate-200">
+                    {onchainParties.from.isExchange ? (
+                      <span className="font-semibold">{onchainParties.from.label}</span>
+                    ) : (
+                      <button
+                        type="button"
+                        title={onchainParties.from.full || onchainParties.from.short}
+                        onClick={(e) => { e.stopPropagation(); setShowFullFrom((v) => !v); }}
+                        className="font-mono underline decoration-white/20 hover:decoration-white/50 hover:text-white transition-colors"
+                      >
+                        {onchainParties.from.label}
+                      </button>
+                    )}
+                    <span className="text-slate-500">→</span>
+                    {onchainParties.to.isExchange ? (
+                      <span className="font-semibold">{onchainParties.to.label}</span>
+                    ) : (
+                      <button
+                        type="button"
+                        title={onchainParties.to.full || onchainParties.to.short}
+                        onClick={(e) => { e.stopPropagation(); setShowFullTo((v) => !v); }}
+                        className="font-mono underline decoration-white/20 hover:decoration-white/50 hover:text-white transition-colors"
+                      >
+                        {onchainParties.to.label}
+                      </button>
+                    )}
+                    {exchangeDetected && (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-semibold">
+                        {exchangeDetected}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] sm:text-xs">
+                {onchainToken && (
+                  <div className="p-2.5 sm:p-3 rounded-lg bg-white/[0.03] border border-white/[0.07]">
+                    <p className="text-slate-500 mb-1">Token</p>
+                    <p className="text-blue-300 font-bold text-sm truncate">{onchainToken}</p>
+                  </div>
+                )}
+                {onchainUsdValue && (
+                  <div className="p-2.5 sm:p-3 rounded-lg bg-white/[0.03] border border-white/[0.07]">
+                    <p className="text-slate-500 mb-1">USD value</p>
+                    <p className="text-emerald-300 font-bold text-sm truncate">{onchainUsdValue}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* PRICE DETAILS SECTION */}
           {alert.rawContent?.type === 'price' && alert.rawContent && (
             <div className="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-2 sm:space-y-3">
@@ -432,13 +559,60 @@ export const AlertDetailModal = ({
                     <p className="text-slate-300 font-bold text-sm">{alert.rawContent.symbol}</p>
                   </div>
                 )}
-                {alert.rawContent.current_price && (
+                {alert.rawContent.current_price != null && (
                   <div>
                     <p className="text-slate-500">Current Price</p>
-                    <p className="text-slate-300 font-bold text-sm">${alert.rawContent.current_price.toLocaleString()}</p>
+                    <p className="text-slate-300 font-bold text-sm">
+                      {Number(alert.rawContent.current_price) < 1
+                        ? `$${Number(alert.rawContent.current_price).toFixed(4)}`
+                        : `$${Number(alert.rawContent.current_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    </p>
                   </div>
                 )}
               </div>
+
+              {/* Market Data (extra fields) */}
+              {(alert.rawContent.market_cap_rank != null ||
+                alert.rawContent.fully_diluted_valuation != null ||
+                alert.rawContent.risk_score != null ||
+                alert.rawContent.price_volatility_category != null ||
+                alert.rawContent.circulating_supply != null) && (
+                <div className="p-2.5 sm:p-3 rounded-lg bg-white/[0.03] border border-white/[0.07]">
+                  <p className="text-[10px] sm:text-xs text-slate-500 mb-2 uppercase tracking-wider">Market Data</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] sm:text-xs">
+                    {alert.rawContent.market_cap_rank != null && (
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-slate-500">Rank</span>
+                        <span className="text-slate-200 font-semibold">#{Number(alert.rawContent.market_cap_rank)}</span>
+                      </div>
+                    )}
+                    {alert.rawContent.fully_diluted_valuation != null && (
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-slate-500">FDV</span>
+                        <span className="text-slate-200 font-semibold">{formatCompactUsd(alert.rawContent.fully_diluted_valuation)}</span>
+                      </div>
+                    )}
+                    {alert.rawContent.risk_score != null && (
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-slate-500">Risk Score</span>
+                        <span className="text-slate-200 font-semibold">{Number(alert.rawContent.risk_score)}</span>
+                      </div>
+                    )}
+                    {alert.rawContent.price_volatility_category != null && (
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-slate-500">Volatility</span>
+                        <span className="text-slate-200 font-semibold">{safeToString(alert.rawContent.price_volatility_category, '')}</span>
+                      </div>
+                    )}
+                    {alert.rawContent.circulating_supply != null && (
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-slate-500">Circulating Supply</span>
+                        <span className="text-slate-200 font-semibold">{formatCompactNumber(alert.rawContent.circulating_supply)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-3 gap-1 text-[9px] sm:text-xs">
                 {typeof priceChange1h === 'number' && (
@@ -468,28 +642,48 @@ export const AlertDetailModal = ({
               </div>
 
               <div className="grid grid-cols-2 gap-1.5 sm:gap-2 text-[10px] sm:text-xs">
-                {alert.rawContent.ath && (
+                {alert.rawContent.ath != null && (
                   <div>
                     <p className="text-slate-500">ATH</p>
-                    <p className="text-slate-300 font-medium">${alert.rawContent.ath.toLocaleString()}</p>
+                    <p className="text-slate-300 font-medium">
+                      {Number(alert.rawContent.ath) < 1
+                        ? `$${Number(alert.rawContent.ath).toFixed(4)}`
+                        : `$${Number(alert.rawContent.ath).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    </p>
                   </div>
                 )}
-                {alert.rawContent.atl && (
+                {alert.rawContent.atl != null && (
                   <div>
                     <p className="text-slate-500">All-Time Low</p>
-                    <p className="text-slate-300 font-medium">${alert.rawContent.atl.toLocaleString()}</p>
+                    <p className="text-slate-300 font-medium">
+                      {Number(alert.rawContent.atl) < 1
+                        ? `$${Number(alert.rawContent.atl).toFixed(4)}`
+                        : `$${Number(alert.rawContent.atl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    </p>
                   </div>
                 )}
-                {alert.rawContent.market_cap && (
+                {alert.rawContent.market_cap != null && (
                   <div>
                     <p className="text-slate-500">Market Cap</p>
-                    <p className="text-slate-300 font-medium">${(alert.rawContent.market_cap / 1e9).toFixed(2)}B</p>
+                    <p className="text-slate-300 font-medium">
+                      {alert.rawContent.market_cap >= 1e9
+                        ? `$${(alert.rawContent.market_cap / 1e9).toFixed(2)}B`
+                        : alert.rawContent.market_cap >= 1e6
+                          ? `$${(alert.rawContent.market_cap / 1e6).toFixed(2)}M`
+                          : `$${Number(alert.rawContent.market_cap).toLocaleString()}`}
+                    </p>
                   </div>
                 )}
-                {alert.rawContent.trading_volume_24h && (
+                {alert.rawContent.trading_volume_24h != null && (
                   <div>
                     <p className="text-slate-500">24H Volume</p>
-                    <p className="text-slate-300 font-medium">${(alert.rawContent.trading_volume_24h / 1e9).toFixed(2)}B</p>
+                    <p className="text-slate-300 font-medium">
+                      {alert.rawContent.trading_volume_24h >= 1e9
+                        ? `$${(alert.rawContent.trading_volume_24h / 1e9).toFixed(2)}B`
+                        : alert.rawContent.trading_volume_24h >= 1e6
+                          ? `$${(alert.rawContent.trading_volume_24h / 1e6).toFixed(2)}M`
+                          : `$${Number(alert.rawContent.trading_volume_24h).toLocaleString()}`}
+                    </p>
                   </div>
                 )}
               </div>
@@ -517,11 +711,11 @@ export const AlertDetailModal = ({
               <div>
                 <p className="text-[11px] text-slate-500 uppercase tracking-wider">Content Filter</p>
                 <p className="text-xs text-slate-300 mt-1">
-                    {isPriceRelated
-                      ? 'This item is price-related news.'
-                      : ((alert?.eventType || alert?.type || '').toUpperCase() === 'ONCHAIN'
-                        ? 'This item is onchain activity.'
-                        : 'This item is general market news.')}
+                  {isPriceRelated
+                    ? 'This item is price-related news.'
+                    : ((alert?.eventType || alert?.type || '').toUpperCase() === 'ONCHAIN'
+                      ? 'This item is onchain activity.'
+                      : 'This item is general market news.')}
                 </p>
               </div>
               <button
@@ -553,11 +747,10 @@ export const AlertDetailModal = ({
                     onClick={() => setLocalSentiment('up')}
                     aria-label="Mark as helpful"
                     aria-pressed={localSentiment === 'up'}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border transition-all ${
-                      localSentiment === 'up'
+                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border transition-all ${localSentiment === 'up'
                         ? 'border-slate-400 text-white bg-slate-700/30'
                         : 'border-[#2a2a2a] text-slate-300 hover:text-white'
-                    }`}
+                      }`}
                   >
                     <ThumbsUp className="w-3.5 h-3.5" />
                     Helpful
@@ -566,11 +759,10 @@ export const AlertDetailModal = ({
                     onClick={() => setLocalSentiment('down')}
                     aria-label="Mark as not useful"
                     aria-pressed={localSentiment === 'down'}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border transition-all ${
-                      localSentiment === 'down'
+                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border transition-all ${localSentiment === 'down'
                         ? 'border-slate-400 text-white bg-slate-700/30'
                         : 'border-[#2a2a2a] text-slate-300 hover:text-white'
-                    }`}
+                      }`}
                   >
                     <ThumbsDown className="w-3.5 h-3.5" />
                     Not useful

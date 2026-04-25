@@ -127,25 +127,13 @@ export const normalizeEvent = (rawEvent = {}, alert = null) => {
   const resolvedPriority = resolvePriority(rawEvent, content, details, safeAlert);
 
   const imageUrl = toText(content?.image_url, '') || null;
-  const summaryText = toText(
-    content?.summary,
-    toText(
-      content?.full_summary,
-      toText(
-        content?.description,
-        toText(
-          details?.summary,
-          toText(details?.full_summary, toText(details?.description, ''))
-        )
-      )
-    )
-  ) || null;
+  const summaryText = toText(content?.summary, '') || null;
 
   if (content?.has_image === true && !imageUrl) {
     console.log('[normalizeEvent] has_image=true but image_url is missing', {
       id: rawEvent?.id ?? rawEvent?.alert_id ?? null,
       source: rawEvent?.source ?? null,
-      title: toText(content?.title, toText(safeAlert?.title, 'Untitled')),
+      title: toText(content?.title, toText(safeAlert?.title, '')),
     });
   }
 
@@ -163,13 +151,13 @@ export const normalizeEvent = (rawEvent = {}, alert = null) => {
   );
 
   return {
-    title: toText(content?.title, toText(safeAlert?.title, 'Untitled')),
+    title: toText(content?.title, toText(safeAlert?.title, '')),
     summary: summaryText,
     source: toText(rawEvent?.source, '') || null,
     type: toText(rawEvent?.type, '') || null,
     event_hash: toText(content?.event_hash, toText(rawEvent?.event_hash, '')) || null,
     priority: resolvedPriority,
-    author: content?.has_author ? toText(content?.author, '') || null : null,
+    author: content?.has_author ? (toText(content?.author, '') || null) : null,
     image_url: imageUrl,
     has_image: content?.has_image === true,
     has_author: content?.has_author === true,

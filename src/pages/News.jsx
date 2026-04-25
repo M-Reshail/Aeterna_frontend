@@ -598,6 +598,9 @@ const SORT_OPTIONS = [
 
 const PRIORITY_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2 };
 const isEventItemId = (id) => String(id).startsWith('event-');
+const INITIAL_FETCH_LIMIT = 30;
+const INITIAL_VISIBLE_COUNT = 10;
+const VISIBLE_INCREMENT = 10;
 const FALLBACK_SOURCE_OPTIONS = ['CoinDesk', 'CoinTelegraph', 'Decrypt', 'CoinGecko'];
 const SOURCE_QUERY_BY_LABEL = {
   CoinDesk: 'coindesk',
@@ -780,7 +783,9 @@ export const News = () => {
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [isLoading, setIsLoading]         = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [visibleCount, setVisibleCount]   = useState(8);
+  const [visibleCount, setVisibleCount]   = useState(INITIAL_VISIBLE_COUNT);
+  const [nextSkip, setNextSkip] = useState(0);
+  const [hasMoreAlerts, setHasMoreAlerts] = useState(true);
   const [filterOpen, setFilterOpen]       = useState(false);
   const [isRefreshing, setIsRefreshing]   = useState(false);
   const [showSortMenu, setShowSortMenu]   = useState(false);
@@ -799,64 +804,89 @@ export const News = () => {
     toastRef.current = toast;
   }, [toast]);
 
+  const fetchAlertsChunk = useCallback(async ({ selectedSources = [], eventType = 'all', skip = 0, limit = INITIAL_FETCH_LIMIT } = {}) => {
+    const sourceList = Array.isArray(selectedSources)
+      ? selectedSources.filter(Boolean)
+      : [];
+    const sourceApiParams = Array.from(
+      new Set(sourceList.map(toApiSourceParam).filter(Boolean))
+    );
+
+    if (sourceApiParams.length > 0) {
+      const type = eventType === 'PRICE_ALERT'
+        ? 'price'
+        : (eventType === 'NEWS'
+          ? 'news'
+          : (eventType === 'ONCHAIN' ? 'onchain' : undefined));
+
+      const results = await Promise.all(
+        sourceApiParams.map((source) =>
+          eventsService.getEvents({ skip, limit, source, type })
+        )
+      );
+      return results.flat().filter(Boolean);
+    }
+
+    if (eventType === 'NEWS') {
+      const result = await eventsService.getEventsByType('news', { skip, limit });
+      return Array.isArray(result) ? result : [];
+    }
+
+    if (eventType === 'PRICE_ALERT') {
+      const result = await eventsService.getEventsByType('price', { skip, limit });
+      return Array.isArray(result) ? result : [];
+    }
+
+    if (eventType === 'ONCHAIN') {
+      const result = await eventsService.getEventsByType('onchain', { skip, limit });
+      return Array.isArray(result) ? result : [];
+    }
+
+    const result = await eventsService.getEvents({ skip, limit });
+    return Array.isArray(result) ? result : [];
+  }, []);
+
   const loadDashboardData = useCallback(async (selectedSources = [], eventType = 'all') => {
     setIsLoading(true);
     setLoadError('');
+    setVisibleCount(INITIAL_VISIBLE_COUNT);
+    setNextSkip(0);
+    setHasMoreAlerts(true);
     try {
       const sourceList = Array.isArray(selectedSources)
         ? selectedSources.filter(Boolean)
         : [];
-      const sourceApiParams = Array.from(
-        new Set(sourceList.map(toApiSourceParam).filter(Boolean))
-      );
 
-      // Load and cache available sources once to avoid repeated expensive calls per filter update.
+      // Load and cache available sources in the background; do not block first paint.
       let apiSources = sourceOptionsRef.current;
       if (!Array.isArray(apiSources) || apiSources.length === 0) {
-        try {
-          apiSources = await eventsService.getAvailableSources({ limit: 100 });
-          sourceOptionsRef.current = apiSources;
-        } catch (error) {
-          console.warn('Could not load available sources:', error.message);
-          apiSources = [];
-        }
+        apiSources = [];
+        eventsService
+          .getAvailableSources({ limit: 60 })
+          .then((sources) => {
+            if (!Array.isArray(sources)) return;
+            sourceOptionsRef.current = sources;
+            setSourceOptions((prev) => Array.from(new Set([
+              ...prev,
+              ...sources,
+              ...FALLBACK_SOURCE_OPTIONS,
+            ].map(normalizeSourceName).filter(Boolean))).sort((a, b) => a.localeCompare(b)));
+          })
+          .catch((error) => {
+            console.warn('Could not load available sources:', error.message);
+          });
       }
 
-      // Determine which API endpoint to call for alerts
       let feedResult = [];
       let feedError = null;
 
       try {
-        if (sourceApiParams.length > 0) {
-          const type = eventType === 'PRICE_ALERT'
-            ? 'price'
-            : (eventType === 'NEWS'
-              ? 'news'
-              : (eventType === 'ONCHAIN' ? 'onchain' : undefined));
-
-          const results = await Promise.all(
-            sourceApiParams.map((source) =>
-              eventsService.getEvents({ skip: 0, limit: 50, source, type })
-            )
-          );
-          feedResult = results.flat().filter(Boolean);
-        } else if (eventType === 'NEWS') {
-          // If only news filter selected (no sources): fetch all news
-          feedResult = await eventsService.getEventsByType('news', { skip: 0, limit: 50 });
-          if (!Array.isArray(feedResult)) feedResult = [];
-        } else if (eventType === 'PRICE_ALERT') {
-          // If only price filter selected (no sources): fetch all price events
-          feedResult = await eventsService.getEventsByType('price', { skip: 0, limit: 50 });
-          if (!Array.isArray(feedResult)) feedResult = [];
-        } else if (eventType === 'ONCHAIN') {
-          // If only onchain filter selected (no sources): fetch all onchain events
-          feedResult = await eventsService.getEventsByType('onchain', { skip: 0, limit: 50 });
-          if (!Array.isArray(feedResult)) feedResult = [];
-        } else {
-          // Default view should include mixed event types for "all" filters.
-          feedResult = await eventsService.getEvents({ skip: 0, limit: 120 });
-          if (!Array.isArray(feedResult)) feedResult = [];
-        }
+        feedResult = await fetchAlertsChunk({
+          selectedSources: sourceList,
+          eventType,
+          skip: 0,
+          limit: INITIAL_FETCH_LIMIT,
+        });
       } catch (error) {
         feedError = error;
         console.warn('Could not load alerts:', error.message);
@@ -881,9 +911,11 @@ export const News = () => {
       logMappingDebug(feedResult, normalizedAlerts, `(sourceKind: ${isEventsFeed ? 'events' : 'alerts'})`);
 
       const intelligenceReadyAlerts = enrichOnchainWalletPatterns(normalizedAlerts);
+      setNextSkip(feedResult.length);
+      setHasMoreAlerts(feedResult.length >= INITIAL_FETCH_LIMIT);
 
-      setAllAlerts((prev) => {
-        const merged = mergeAlertsPreservingReadState(prev, intelligenceReadyAlerts, readAlertIdsRef.current);
+      setAllAlerts(() => {
+        const merged = mergeAlertsPreservingReadState([], intelligenceReadyAlerts, readAlertIdsRef.current);
 
         // Extract sources from loaded alerts
         const sourcesFromAlerts = merged
@@ -935,7 +967,44 @@ export const News = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [fetchAlertsChunk]);
+
+  const loadMoreAlerts = useCallback(async () => {
+    if (isLoading || isLoadingMore || !hasMoreAlerts) return;
+
+    setIsLoadingMore(true);
+    try {
+      const sourceList = Array.isArray(appliedFilters.sources)
+        ? appliedFilters.sources.filter(Boolean)
+        : [];
+
+      const feedResult = await fetchAlertsChunk({
+        selectedSources: sourceList,
+        eventType: appliedFilters.eventType || 'all',
+        skip: nextSkip,
+        limit: INITIAL_FETCH_LIMIT,
+      });
+
+      if (!Array.isArray(feedResult) || feedResult.length === 0) {
+        setHasMoreAlerts(false);
+        return;
+      }
+
+      const normalizedAlerts = feedResult
+        .filter(Boolean)
+        .map((item) => normalizeDashboardEvent(item, 'events'));
+      const intelligenceReadyAlerts = enrichOnchainWalletPatterns(normalizedAlerts);
+
+      setAllAlerts((prev) => mergeAlertsPreservingReadState(prev, intelligenceReadyAlerts, readAlertIdsRef.current));
+      setNextSkip((prev) => prev + feedResult.length);
+      setHasMoreAlerts(feedResult.length >= INITIAL_FETCH_LIMIT);
+    } catch (error) {
+      console.warn('Could not load more alerts:', error.message);
+      setHasMoreAlerts(false);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [appliedFilters.eventType, appliedFilters.sources, fetchAlertsChunk, hasMoreAlerts, isLoading, isLoadingMore, nextSkip]);
 
   const selectedSourcesKey = (appliedFilters.sources || []).join('|');
   const eventTypeKey = appliedFilters.eventType || 'all';
@@ -1019,9 +1088,13 @@ export const News = () => {
   // Apply filters + sort (memo)
   const filtered = useMemo(() => {
     let result = allAlerts;
+    const selectedPriorities = Array.isArray(appliedFilters.priority) ? appliedFilters.priority : [];
+    const effectivePriorities = selectedPriorities.length === 0
+      ? DEFAULT_FILTERS.priority
+      : selectedPriorities;
 
-    if (appliedFilters.priority.length < 3) {
-      result = result.filter((a) => appliedFilters.priority.includes(a.priority));
+    if (effectivePriorities.length < DEFAULT_FILTERS.priority.length) {
+      result = result.filter((a) => effectivePriorities.includes(a.priority));
     }
     if (appliedFilters.eventType && appliedFilters.eventType !== 'all') {
       if (appliedFilters.eventType === 'PRICE_ALERT') {
@@ -1098,17 +1171,15 @@ export const News = () => {
     const handleScroll = () => {
       if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120 && !isLoadingMore) {
         if (visibleCount < filtered.length) {
-          setIsLoadingMore(true);
-          setTimeout(() => {
-            setVisibleCount((prev) => Math.min(prev + 4, filtered.length));
-            setIsLoadingMore(false);
-          }, 600);
+          setVisibleCount((prev) => Math.min(prev + VISIBLE_INCREMENT, filtered.length));
+        } else if (hasMoreAlerts) {
+          loadMoreAlerts();
         }
       }
     };
     el.addEventListener('scroll', handleScroll);
     return () => el.removeEventListener('scroll', handleScroll);
-  }, [filtered.length, isLoadingMore, visibleCount]);
+  }, [filtered.length, hasMoreAlerts, isLoadingMore, loadMoreAlerts, visibleCount]);
 
   const visibleAlerts = filtered.slice(0, visibleCount);
   const unreadCount = allAlerts.filter((a) => a.status === 'new').length;
@@ -1187,14 +1258,14 @@ export const News = () => {
 
   const handleApplyFilters = () => {
     setAppliedFilters({ ...filters });
-    setVisibleCount(8);
+    setVisibleCount(INITIAL_VISIBLE_COUNT);
     setFilterOpen(false);
   };
 
   const handleClearFilters = () => {
     setFilters(DEFAULT_FILTERS);
     setAppliedFilters(DEFAULT_FILTERS);
-    setVisibleCount(8);
+    setVisibleCount(INITIAL_VISIBLE_COUNT);
   };
 
   const handleRefresh = async () => {
@@ -1207,11 +1278,16 @@ export const News = () => {
     const nextFilters = { ...filters, eventType: 'PRICE_ALERT' };
     setFilters(nextFilters);
     setAppliedFilters(nextFilters);
-    setVisibleCount(8);
+    setVisibleCount(INITIAL_VISIBLE_COUNT);
   }, [filters]);
 
+  const selectedPriorityCount = Array.isArray(appliedFilters.priority)
+    ? appliedFilters.priority.length
+    : 0;
+  const hasPriorityFilter = selectedPriorityCount > 0 && selectedPriorityCount < DEFAULT_FILTERS.priority.length;
+
   const hasActiveFilters =
-    appliedFilters.priority.length < 3 ||
+    hasPriorityFilter ||
     appliedFilters.eventType !== 'all' ||
     !!appliedFilters.entity ||
     !!appliedFilters.dateFrom ||
@@ -1263,13 +1339,7 @@ export const News = () => {
           </div>
         </div>
 
-        {/* STATS ROW */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
-          <StatCard icon={Bell}          label="Total Alerts"    value={isLoading ? '...' : allAlerts.length}    subValue="all time"           accentColor="blue"    />
-          <StatCard icon={BellRing}      label="Unread"          value={isLoading ? '...' : unreadCount}         subValue="requires action"    accentColor="amber"   />
-          <StatCard icon={AlertTriangle} label="High Priority"   value={isLoading ? '...' : highPriorityCount}   subValue={`${highUnread} unread`}  accentColor="red"   />
-          <StatCard icon={Activity}      label="Sources Active"  value={isLoading ? '...' : sourceOptions.length} subValue="live feeds"          accentColor="emerald" />
-        </div>
+
 
         {/* MAIN CONTENT: SIDEBAR + FEED */}
         <div className="flex gap-2 items-start">
@@ -1353,7 +1423,7 @@ export const News = () => {
             {/* Active filter chips */}
             {hasActiveFilters && (
               <div className="flex flex-wrap gap-1.5 sm:gap-2 px-1 text-xs sm:text-sm">
-                {appliedFilters.priority.length < 3 && (
+                {hasPriorityFilter && (
                   <div className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                     Priority: {appliedFilters.priority.join(', ')}
                     <button onClick={() => {
@@ -1395,7 +1465,7 @@ export const News = () => {
             {/* Feed list */}
             <div
               ref={feedRef}
-                className="space-y-1 overflow-y-auto pr-1"
+                className="space-y-2 overflow-y-auto pr-1"
               style={{ maxHeight: 'calc(100vh - 130px)', minHeight: '520px' }}
             >
               {isLoading ? (

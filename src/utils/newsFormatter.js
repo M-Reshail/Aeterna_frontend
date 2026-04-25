@@ -128,18 +128,7 @@ export const mapNewsFeedItem = (event = {}) => {
     'Untitled News'
   );
 
-  // Required fallback order: full_summary > description > title.
-  const rawSummary = firstNonEmptyText(
-    content?.full_summary,
-    details?.full_summary,
-    content?.description,
-    details?.description,
-    event?.full_summary,
-    event?.description,
-    headline
-  );
-
-  const summary = cleanNewsSummary(rawSummary, headline);
+  const summary = toText(content?.summary, '');
 
   const source = firstNonEmptyText(
     content?.source,
@@ -176,12 +165,7 @@ export const mapNewsFeedItem = (event = {}) => {
     ''
   );
 
-  const author = firstNonEmptyText(
-    content?.author,
-    details?.author,
-    event?.author,
-    'Unknown author'
-  );
+  const author = toText(content?.author, '') || null;
 
   return {
     source,

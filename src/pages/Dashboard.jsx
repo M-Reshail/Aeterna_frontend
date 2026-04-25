@@ -6,23 +6,13 @@ import Tooltip from '@components/common/Tooltip';
 import {
   TrendingUp,
   Calendar,
-  RefreshCw,
-  Download,
-  SlidersHorizontal,
-  ChevronDown,
-  Inbox,
-  Loader2,
-  X,
 } from 'lucide-react';
-import AlertCard from '@components/dashboard/AlertCard';
 import { AlertDetailModal } from '@components/dashboard/AlertDetailModal';
-import { FilterSidebar } from '@components/dashboard/FilterSidebar';
 import { useSocket } from '@hooks/useSocket';
 import { WS_EVENTS } from '@utils/constants';
 import { useAuth } from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
 import feedbackService from '@services/feedbackService';
-import alertsService from '@services/alertsService';
 import eventsService from '@services/eventsService';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -92,6 +82,93 @@ const inferEventType = (title = '') => {
   const lower = toDisplayText(title, '').toLowerCase();
   if (lower.includes('price')) return 'PRICE_ALERT';
   return 'NEWS';
+};
+
+// ─── Price alert title / summary generators ───────────────────────────────────
+
+/**
+ * Pick the single most relevant alert reason from the array or string.
+ * Prioritises: Near ATL > Near ATH > first entry > raw string.
+ */
+const pickAlertReason = (reasonsField) => {
+  const reasons = Array.isArray(reasonsField)
+    ? reasonsField
+    : typeof reasonsField === 'string' && reasonsField.trim()
+      ? [reasonsField.trim()]
+      : [];
+
+  if (!reasons.length) return '';
+
+  // Prefer ATL warnings - they are more urgent
+  const atl = reasons.find((r) => /atl/i.test(r));
+  if (atl) return atl;
+  const ath = reasons.find((r) => /ath/i.test(r));
+  if (ath) return ath;
+  return reasons[0];
+};
+
+/** Format a raw price number to a human-readable dollar string. */
+const formatPrice = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  if (n < 0.0001) return `$${n.toFixed(8)}`;
+  if (n < 1)      return `$${n.toFixed(4)}`;
+  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+/** Format a raw market-cap number to a human-readable string (e.g. 126.49M). */
+const formatMarketCap = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
+  if (n >= 1e9)  return `$${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6)  return `$${(n / 1e6).toFixed(2)}M`;
+  return `$${n.toLocaleString()}`;
+};
+
+/** Format a percentage change with sign and 2 dp, e.g. "+1.23%" or "-0.45%". */
+const formatPct = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
+};
+
+/**
+ * Generate a smart title for price alerts when the backend doesn't provide one.
+ * Format: "{SYMBOL} — {primary alert reason}" or just "{Name}" as fallback.
+ */
+const generatePriceTitle = (content = {}) => {
+  const symbol = (content.symbol || content.name || '').toUpperCase().trim();
+  if (!symbol) return '';
+
+  const reason = pickAlertReason(content.significant_moves || content.alert_reasons);
+  return reason ? `${symbol} — ${reason}` : symbol;
+};
+
+/**
+ * Generate a descriptive summary for price alerts when the backend omits one.
+ * Format: "{Name} ({SYMBOL}) is trading at $X.XXXX, with +Y.YY% change in 24h. Market cap: $ZMB."
+ */
+const generatePriceSummary = (content = {}) => {
+  const symbol  = (content.symbol || '').toUpperCase().trim();
+  const name    = (content.name   || symbol).trim();
+  const price   = formatPrice(content.current_price);
+  const pct24h  = formatPct(content.change_24h_pct);
+  const mcap    = formatMarketCap(content.market_cap);
+
+  if (!symbol && !price) return '';
+
+  const parts = [];
+  const label = name && name !== symbol ? `${name} (${symbol})` : (symbol || name);
+  if (label)  parts.push(label);
+  if (price)  parts.push(`is trading at ${price}`);
+  if (pct24h) parts.push(`with ${pct24h} change in 24h`);
+
+  let sentence = parts.join(' ');
+  if (sentence) sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1) + '.';
+
+  if (mcap) sentence += ` Market cap: ${mcap}.`;
+  return sentence;
 };
 
 const normalizePriorityValue = (value) => {
@@ -204,33 +281,24 @@ const normalizeAlert = (alert) => {
   const contentObject = toObject(alert?.content);
   const detailsObject = toObject(contentObject?.details);
 
-  const title = toDisplayText(
-    alert?.title,
-    toDisplayText(
-      contentObject?.title,
-      toDisplayText(detailsObject?.title, 'Untitled Alert')
-    )
-  );
+  // Resolve canonical type early so title/summary generators know if this is a price event
+  const rawBaseType = (alert?.type || contentObject?.type || '').toLowerCase();
+  const isPriceEvent = rawBaseType === 'price';
 
-  const summary = toDisplayText(
-    contentObject?.summary,
-    toDisplayText(
-      contentObject?.full_summary,
-      toDisplayText(
-        contentObject?.description,
-        toDisplayText(
-          detailsObject?.summary,
-          toDisplayText(
-            detailsObject?.full_summary,
-            toDisplayText(
-              detailsObject?.description,
-              toDisplayText(alert?.summary, toDisplayText(alert?.description, ''))
-            )
-          )
-        )
-      )
-    )
-  );
+  // ── Title ─────────────────────────────────────────────────────────────────
+  // For price events the backend never sends content.title; generate from symbol + alert_reasons.
+  const contentTitle = contentObject?.title
+    || contentObject?.name
+    || detailsObject?.title
+    || detailsObject?.name
+    || '';
+
+  const generatedTitle = isPriceEvent ? generatePriceTitle(contentObject) : '';
+  const resolvedTitle = alert?.title || contentTitle || generatedTitle;
+  const title = resolvedTitle || generatedTitle || '';
+
+  // ── Summary ───────────────────────────────────────────────────────────────
+  const summary = toDisplayText(contentObject?.summary, '');
 
   const categories = normalizeCategories(
     Array.isArray(contentObject?.categories)
@@ -239,14 +307,22 @@ const normalizeAlert = (alert) => {
   );
 
   const hashtags = categories.map(toHashtag).filter(Boolean);
-  const normalizedType = toDisplayText(
-    alert?.event_type,
+  const baseType = toDisplayText(
+    alert?.type,
     toDisplayText(contentObject?.type, inferEventType(title))
-  ).toUpperCase();
+  ).toLowerCase();
+
+  let normalizedType = toDisplayText(alert?.event_type, '').toUpperCase();
+  if (!normalizedType) {
+    if (baseType === 'price') normalizedType = 'PRICE_ALERT';
+    else if (baseType === 'onchain') normalizedType = 'LARGE_TRANSFER';
+    else normalizedType = baseType.toUpperCase();
+  }
 
   return {
     id: alert.alert_id ?? alert.id,
     alert_id: alert.alert_id ?? alert.id,
+    type: baseType || 'news',
     event_type: normalizedType,
     source: toDisplayText(alert.source, toDisplayText(contentObject?.source, 'Unknown')),
     title,
@@ -255,7 +331,7 @@ const normalizeAlert = (alert) => {
     priority: resolveEventPriority(alert, contentObject),
     status: normalizeStatus(alert.status),
     timestamp: alert.created_at || alert.timestamp || alert.createdAt || new Date().toISOString(),
-    entity: toDisplayText(alert.entity, toDisplayText(contentObject?.symbol, toDisplayText(contentObject?.id, ''))),
+    entity: toDisplayText(alert.entity, toDisplayText(contentObject?.symbol, toDisplayText(contentObject?.name, toDisplayText(contentObject?.id, '')))),
     rawContent: {
       ...contentObject,
       details: detailsObject,
@@ -265,7 +341,7 @@ const normalizeAlert = (alert) => {
       author: toDisplayText(contentObject?.author, toDisplayText(detailsObject?.author, '')),
       categories,
       hashtags,
-      type: toDisplayText(contentObject?.type, normalizedType.toLowerCase()),
+      type: baseType || 'news',
     },
   };
 };
@@ -273,34 +349,24 @@ const normalizeAlert = (alert) => {
 const normalizeNewsEvent = (event) => {
   const content = toObject(event?.content);
   const details = toObject(content?.details);
-  const title = toDisplayText(
-    content.title,
-    toDisplayText(
-      details?.title,
-      toDisplayText(event?.title, toDisplayText(content.name, `News from ${toDisplayText(event?.source, 'source')}`))
-    )
-  );
-  const summary = toDisplayText(
-    content.summary,
-    toDisplayText(
-      content.full_summary,
-      toDisplayText(
-        content.description,
-        toDisplayText(
-          details?.summary,
-          toDisplayText(
-            details?.full_summary,
-            toDisplayText(
-              details?.description,
-              toDisplayText(event?.summary, toDisplayText(content.alert_reasons, ''))
-            )
-          )
-        )
-      )
-    )
-  );
+
+  const isPriceEvent = String(event?.type || '').toLowerCase() === 'price';
+
+  // ── Title ─────────────────────────────────────────────────────────────────
+  const contentTitle = content?.title
+    || content?.name
+    || content?.symbol
+    || details?.title
+    || details?.name
+    || event?.title
+    || '';
+
+  const generatedTitle = isPriceEvent ? generatePriceTitle(content) : '';
+  const title = contentTitle || generatedTitle || '';
+  // ── Summary ───────────────────────────────────────────────────────────────
+  const summary = toDisplayText(content?.summary, '');
   const link = toDisplayText(content.link, toDisplayText(details?.link, toDisplayText(event?.link, '')));
-  const author = toDisplayText(content.author, toDisplayText(details?.author, toDisplayText(event?.author, 'Unknown author')));
+  const author = toDisplayText(content.author, toDisplayText(details?.author, toDisplayText(event?.author, '')));
   const categories = normalizeCategories(content.categories?.length ? content.categories : (details?.categories?.length ? details.categories : event?.categories));
   const hashtags = categories.map(toHashtag).filter(Boolean);
   const normalizedTimestamp = normalizeTimestamp(
@@ -315,10 +381,19 @@ const normalizeNewsEvent = (event) => {
     event?.createdAt
   ) || new Date().toISOString();
 
+  const baseType = String(event?.type || 'news').toLowerCase();
+  let normalizedType = String(event?.event_type || '').toUpperCase();
+  if (!normalizedType) {
+    if (baseType === 'price') normalizedType = 'PRICE_ALERT';
+    else if (baseType === 'onchain') normalizedType = 'LARGE_TRANSFER';
+    else normalizedType = baseType.toUpperCase();
+  }
+
   return {
     id: `event-${event?.id}`,
     event_id: event?.id,
-    event_type: String(event?.type || 'news').toUpperCase(),
+    type: baseType,
+    event_type: normalizedType || baseType.toUpperCase(),
     source: toDisplayText(event?.source, 'unknown'),
     title,
     content: summary,
@@ -330,7 +405,7 @@ const normalizeNewsEvent = (event) => {
     priority: resolveEventPriority(event, content),
     status: 'new',
     timestamp: normalizedTimestamp,
-    entity: toDisplayText(content.id, toDisplayText(content.symbol, toDisplayText(content.name, ''))),
+    entity: toDisplayText(content.symbol, toDisplayText(content.name, toDisplayText(content.id, ''))),
     // Preserve raw content for detailed view
     rawContent: {
       ...content,
@@ -340,7 +415,7 @@ const normalizeNewsEvent = (event) => {
       author,
       categories,
       hashtags,
-      type: event?.type,
+      type: baseType,
     },
   };
 };
@@ -356,10 +431,10 @@ const DEFAULT_FILTERS = {
 };
 
 const SORT_OPTIONS = [
-  { value: 'newest',   label: 'Newest First' },
-  { value: 'oldest',   label: 'Oldest First' },
+  { value: 'newest', label: 'Newest First' },
+  { value: 'oldest', label: 'Oldest First' },
   { value: 'priority', label: 'Priority (High → Low)' },
-  { value: 'unread',   label: 'Unread First' },
+  { value: 'unread', label: 'Unread First' },
 ];
 
 const PRIORITY_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2 };
@@ -452,8 +527,8 @@ const EmptyState = ({ hasFilters, onClear, loadError }) => (
       {loadError
         ? loadError
         : hasFilters
-        ? 'No alerts match your current filters. Try adjusting or clearing them.'
-        : 'Your alert feed is clear. New alerts will appear here in real-time.'}
+          ? 'No alerts match your current filters. Try adjusting or clearing them.'
+          : 'Your alert feed is clear. New alerts will appear here in real-time.'}
     </p>
     {hasFilters && (
       <button
@@ -532,29 +607,12 @@ export const Dashboard = () => {
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
-  const [allAlerts, setAllAlerts]         = useState([]);
-  const [filters, setFilters]             = useState(DEFAULT_FILTERS);
-  const [appliedFilters, setAppliedFilters] = useState(DEFAULT_FILTERS);
-  const [sortBy, setSortBy]               = useState('newest');
   const [selectedAlert, setSelectedAlert] = useState(null);
-  const [isLoading, setIsLoading]         = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [visibleCount, setVisibleCount]   = useState(8);
-  const [filterOpen, setFilterOpen]       = useState(false);
-  const [isRefreshing, setIsRefreshing]   = useState(false);
-  const [showSortMenu, setShowSortMenu]   = useState(false);
-  const [recentAlertIds, setRecentAlertIds] = useState(new Set());
-  const [feedbackMap, setFeedbackMap] = useState({});
-  const [sourceOptions, setSourceOptions] = useState([]);
-  const [loadError, setLoadError] = useState('');
   const [highImpactNews, setHighImpactNews] = useState([]);
   const [todayEvents, setTodayEvents] = useState([]);
   const [isLoadingHighlights, setIsLoadingHighlights] = useState(true);
-  const sortMenuRef = useRef(null);
-  const feedRef     = useRef(null);
   const toastRef = useRef(toast);
   const hasShownLoadErrorRef = useRef(false);
-  const readAlertIdsRef = useRef(new Set());
 
   useEffect(() => {
     toastRef.current = toast;
@@ -1016,12 +1074,11 @@ export const Dashboard = () => {
                 {highImpactNews.map((news) => (
                   <div
                     key={news.id}
-                    className="bg-white/5 border border-white/10 rounded-lg p-3 hover:bg-white/10 hover:border-emerald-500/20 transition-all"
+                    className="bg-white/5 border border-white/10 rounded-lg p-3 hover:bg-white/10 hover:border-emerald-500/20 transition-all cursor-pointer"
+                    onClick={() => handleOpenAlert(news)}
                   >
                     <div className="flex items-start gap-2">
-                      <span className="inline-block px-2 py-1 rounded text-xs font-semibold bg-red-500/20 text-red-300 flex-shrink-0 mt-0.5">
-                        HIGH
-                      </span>
+                      <span className="inline-block px-2 py-1 rounded text-xs font-semibold bg-red-500/20 text-red-300 flex-shrink-0 mt-0.5">HIGH</span>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs sm:text-sm font-semibold text-white line-clamp-1">{news.title}</p>
                         <p className="text-xs text-slate-500 mt-0.5">
@@ -1055,21 +1112,14 @@ export const Dashboard = () => {
             ) : (
               <div className="space-y-2">
                 {todayEvents.slice(0, 3).map((event) => (
-                  <div
-                    key={event.id}
-                    className="bg-white/5 border border-white/10 rounded-lg p-3 hover:bg-white/10 hover:border-amber-500/20 transition-all"
-                  >
+                  <div key={event.id} className="bg-white/5 border border-white/10 rounded-lg p-3 hover:bg-white/10 hover:border-amber-500/20 transition-all">
                     <div className="flex items-start gap-2">
-                      <span className={`inline-block px-2 py-1 rounded text-xs font-semibold flex-shrink-0 mt-0.5 ${
-                        event.impact === 'HIGH' ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/20 text-amber-300'
-                      }`}>
+                      <span className={`inline-block px-2 py-1 rounded text-xs font-semibold flex-shrink-0 mt-0.5 ${event.impact === 'HIGH' ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/20 text-amber-300'}`}>
                         {event.impact}
                       </span>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs sm:text-sm font-semibold text-white line-clamp-1">{event.title}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {event.country} • {event.time} • {event.category}
-                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">{event.country} • {event.time} • {event.category}</p>
                       </div>
                     </div>
                   </div>
@@ -1078,7 +1128,22 @@ export const Dashboard = () => {
             )}
           </div>
         </div>
+
+
       </div>
+
+      {/* Detail modal — always uses the exact clicked alert's rawContent */}
+      <AlertDetailModal
+        alert={selectedAlert}
+        isOpen={!!selectedAlert}
+        onClose={() => setSelectedAlert(null)}
+        onMarkAsRead={handleMarkAsRead}
+        onDismiss={handleDismiss}
+        onApplyPriceFilter={handleApplyPriceFilter}
+        isPriceRelated={selectedAlert ? isPriceRelatedAlert(selectedAlert) : false}
+        onFeedback={handleFeedback}
+        feedbackState={selectedAlert ? feedbackMap[selectedAlert.alert_id ?? selectedAlert.id] : null}
+      />
     </div>
   );
 };
